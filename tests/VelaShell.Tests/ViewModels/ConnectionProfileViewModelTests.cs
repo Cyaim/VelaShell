@@ -831,6 +831,252 @@ public sealed class ConnectionProfileViewModelTests
         Assert.AreEqual("test.telnet", profile.PluginProtocolId);
     }
 
+    /// <summary>工作台替身:只用来把带变体的描述符送进视图模型,从不真的打开。</summary>
+    private sealed class VariantWorkspace : PluginSdk.Workspaces.IWorkspaceProvider
+    {
+        public Task<PluginSdk.Workspaces.IWorkspaceDocument> OpenAsync(
+            PluginSdk.Workspaces.WorkspaceConnectRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// 数据库式的工作台:一个页签,「类型」那一栏选 MySQL(3306)/ PostgreSQL(5432)/ SQLite 三档。
+    /// SQLite 是磁盘上的一个文件:没有凭据、没有端点,「主机」那一栏改标成「数据库文件」。
+    /// </summary>
+    private static Infrastructure.Plugins.Protocols.PluginProtocolRegistry RegisterVariantWorkspace(
+        string id, out IDisposable handle)
+    {
+        var registry = new Infrastructure.Plugins.Protocols.PluginProtocolRegistry();
+        handle = registry.RegisterWorkspace(id, new()
+        {
+            Id = id,
+            DisplayName = "数据库",
+            DefaultPort = 3306,
+            // 基础描述符是"要凭据"的那一档 —— 漏套变体时 SQLite 也会冒出两栏凭据。
+            Features = PluginSdk.Workspaces.WorkspaceFeatures.CertificateTrust,
+            Fields =
+            [
+                new()
+                {
+                    Key = "dialect",
+                    Label = "数据库类型",
+                    Kind = PluginSdk.Protocols.ProtocolSettingKind.Choice,
+                    DefaultValue = "mysql",
+                    Choices = [new("mysql", "MySQL"), new("postgresql", "PostgreSQL"), new("sqlite", "SQLite")]
+                }
+            ],
+            VariantKey = "dialect",
+            Variants =
+            [
+                new() { Value = "mysql", DefaultPort = 3306 },
+                new() { Value = "postgresql", DefaultPort = 5432 },
+                new()
+                {
+                    Value = "sqlite",
+                    DefaultPort = 1,
+                    HostLabel = "数据库文件",
+                    Features = PluginSdk.Workspaces.WorkspaceFeatures.NoCredentials
+                               | PluginSdk.Workspaces.WorkspaceFeatures.NoEndpoint
+                }
+            ]
+        }, new VariantWorkspace());
+        return registry;
+    }
+
+    /// <summary>
+    /// <b>连接框本身跟着"类型"那一栏变形</b> —— 端口、"主机"那一栏的含义、要不要凭据。
+    /// <para>
+    /// 一个插件用一个页签承载一族相近的连接类型时,这几样**是随方言变的**:
+    /// 用户选了 PostgreSQL,端口就该是 5432 而不是 MySQL 的 3306。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task PluginWorkspace_Variant_ReshapesTheConnectionBox()
+    {
+        var registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
+        using (handle)
+        {
+            var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
+            await vm.SelectPluginProtocolCommand.Execute("test.db").FirstAsync();
+
+            Assert.AreEqual(3306, vm.Port, "默认方言那一档的端口。");
+            Assert.IsTrue(vm.ShowCredentialFields, "MySQL 是要凭据的。");
+
+            PluginProtocolFieldViewModel dialect = vm.PluginFields.Single(f => f.Key == "dialect");
+
+            dialect.Text = "postgresql";
+            Assert.AreEqual(5432, vm.Port, "换方言之后端口要跟着走 —— 否则选了 PG 却连去 MySQL 的端口。");
+
+            dialect.Text = "sqlite";
+            Assert.AreEqual("数据库文件", vm.HostLabel, "SQLite 的\"主机\"那一栏装的是文件路径。");
+            Assert.IsFalse(vm.ShowCredentialFields, "SQLite 就是个文件,填了用户名也没地方会用到。");
+            Assert.IsTrue(vm.AllowsAnonymous, "NoCredentials 蕴含匿名,否则按钮永远灰着。");
+
+            // 切回去要能**完全**恢复:变体每次都从原始描述重新套,而不是层层叠加。
+            dialect.Text = "mysql";
+            Assert.AreEqual(3306, vm.Port);
+            Assert.IsTrue(vm.ShowCredentialFields);
+            Assert.IsFalse(vm.AllowsAnonymous, "MySQL 要凭据:匿名不能粘在上一档上。");
+            Assert.AreNotEqual("数据库文件", vm.HostLabel, "上一个变体的标签粘住了 —— 变体是覆盖,不是累加。");
+        }
+    }
+
+    /// <summary>
+    /// <b>用户自己填过的端口不会被变体盖掉。</b>与切换页签用的是同一条判定 ——
+    /// 用户把端口改成 13306(容器映射)再换方言,自己填的端口不能没了。
+    /// </summary>
+    [TestMethod]
+    public async Task PluginWorkspace_Variant_DoesNotOverwriteAHandTypedPort()
+    {
+        var registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
+        using (handle)
+        {
+            var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
+            await vm.SelectPluginProtocolCommand.Execute("test.db").FirstAsync();
+
+            vm.Port = 13306;
+            vm.PluginFields.Single(f => f.Key == "dialect").Text = "postgresql";
+
+            Assert.AreEqual(13306, vm.Port, "用户手填的端口被变体盖掉了。");
+        }
+    }
+
+    /// <summary>
+    /// <b>重复点当前插件页签,不能把已经跟着变体走的端口拉回页签默认值。</b>
+    /// <para>
+    /// <c>IsProtocolDefaultPort</c> 把**变体端口**也算作"用户没手填过",而端口跟随发生在
+    /// "重复点当前页签"那条早退之前。直接写页签默认值的话,选了 PostgreSQL(5432)之后
+    /// 再点一次同一个页签,端口会被改写成 3306 再从早退处返回 —— 下拉仍写着 PostgreSQL。
+    /// 目标端口先按变体算好再写,所以端口<b>一次都不该动</b>(不是先改成 3306 再改回来)。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task PluginWorkspace_ReselectingTheSameTab_KeepsTheVariantPort()
+    {
+        var registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
+        using (handle)
+        {
+            var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
+            await vm.SelectPluginProtocolCommand.Execute("test.db").FirstAsync();
+            vm.PluginFields.Single(f => f.Key == "dialect").Text = "postgresql";
+            Assert.AreEqual(5432, vm.Port, "前置条件:变体端口已经跟上来了。");
+
+            List<int> ports = [];
+            ((System.ComponentModel.INotifyPropertyChanged)vm).PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(ConnectionProfileViewModel.Port))
+                {
+                    ports.Add(vm.Port);
+                }
+            };
+
+            // 再点一次**同一个**页签。
+            await vm.SelectPluginProtocolCommand.Execute("test.db").FirstAsync();
+
+            Assert.AreEqual(5432, vm.Port, "重复点当前页签把变体端口拉回了页签默认值。");
+            Assert.IsEmpty(ports, $"端口不该被动过,实际依次变成了:{string.Join(" → ", ports)}");
+            Assert.AreEqual(
+                "postgresql",
+                vm.PluginFields.Single(f => f.Key == "dialect").Text,
+                "方言下拉不该被动过 —— 它与端口必须一直是一致的。");
+        }
+    }
+
+    /// <summary>
+    /// <b>从插件变体切回内建协议时,变体端口要跟着还原。</b>
+    /// <para>
+    /// 判定用的 <c>IsProtocolDefaultPort</c> 要靠 <c>_pluginBaseForm</c> 才认得出变体端口,
+    /// 而切回内建协议那一支会先把它置空 —— 等到方法末尾再判,5432 已经取不到变体信息、
+    /// 会被当成"用户手填的"留下来,新建的 SSH 配置停在 5432 上。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task PluginWorkspace_SwitchingBackToSsh_RestoresTheDefaultPort()
+    {
+        var registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
+        using (handle)
+        {
+            var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
+            await vm.SelectPluginProtocolCommand.Execute("test.db").FirstAsync();
+            vm.PluginFields.Single(f => f.Key == "dialect").Text = "postgresql";
+            Assert.AreEqual(5432, vm.Port, "前置条件:变体端口已经跟上来了。");
+
+            await vm.SelectConnectionTypeCommand.Execute(ConnectionType.SSH).FirstAsync();
+
+            Assert.AreEqual(22, vm.Port, "切回 SSH 之后端口停在了 5432 上。");
+        }
+    }
+
+    /// <summary>
+    /// <b>从带变体的页签换到另一个插件页签,目标端口是新页签的,不是上一个页签的变体端口。</b>
+    /// <para>
+    /// 端口跟随在清掉上一个协议的表单之前算目标;那一刻 <c>_pluginBaseForm</c> 还是上一个页签的,
+    /// 拿它的变体表算,端口会停在 PostgreSQL 的 5432 上,而新页签是 Redis。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task PluginWorkspace_SwitchingToAnotherPluginTab_TakesThatTabsPort()
+    {
+        var registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
+        using (handle)
+        using (registry.RegisterWorkspace("test.cache", new()
+               {
+                   Id = "test.cache",
+                   DisplayName = "缓存",
+                   DefaultPort = 6379
+               }, new VariantWorkspace()))
+        {
+            var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
+            await vm.SelectPluginProtocolCommand.Execute("test.db").FirstAsync();
+            vm.PluginFields.Single(f => f.Key == "dialect").Text = "postgresql";
+            Assert.AreEqual(5432, vm.Port, "前置条件:变体端口已经跟上来了。");
+
+            await vm.SelectPluginProtocolCommand.Execute("test.cache").FirstAsync();
+
+            Assert.AreEqual(6379, vm.Port, "换了页签,端口却还停在上一个页签的变体端口上。");
+        }
+    }
+
+    /// <summary>
+    /// <b>没有端点的那一档,端口那一栏要收起来 —— 而且切回去还得出现。</b>
+    /// <para>
+    /// SQLite 是磁盘上的一个文件,端口那一栏填什么都不会被拼进连接串,留着只会让用户以为它有意义。
+    /// 顺带守住两条边界:主机那一栏<b>不能</b>跟着收(文件路径正是填在它里面),
+    /// 以及收起端口之后保存按钮不能因此灰掉 —— 端口的**取值**照旧在 1–65535 内。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task PluginWorkspace_VariantWithoutEndpoint_HidesThePortBox()
+    {
+        var registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
+        using (handle)
+        {
+            var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = @"D:\data\app.db" };
+            await vm.SelectPluginProtocolCommand.Execute("test.db").FirstAsync();
+
+            Assert.IsTrue(vm.ShowPortField, "MySQL 是有端点的,端口那一栏必须在。");
+
+            PluginProtocolFieldViewModel dialect = vm.PluginFields.Single(f => f.Key == "dialect");
+
+            // ShowPortField 是纯计算属性:不补发通知的话,值变了而界面上那一栏纹丝不动。
+            // 所以这里连通知一起验。
+            List<string?> changed = [];
+            ((System.ComponentModel.INotifyPropertyChanged)vm).PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+            dialect.Text = "sqlite";
+            Assert.IsFalse(vm.ShowPortField, "SQLite 没有端点,端口那一栏还留着上一个方言的残值。");
+            Assert.Contains(nameof(vm.ShowPortField), changed,
+                "换变体时没给 ShowPortField 补发通知,绑在它上面的那一栏不会跟着刷新。");
+            Assert.AreEqual("数据库文件", vm.HostLabel, "主机那一栏不能跟着收 —— 文件路径就填在它里面。");
+            Assert.IsTrue(await vm.SaveCommand.CanExecute.FirstAsync(),
+                "收起一栏不该顺手把保存按钮堵死:端口的取值仍在合法区间内。");
+
+            // 切回去要完全恢复:变体的能力位是整体替换,不该有"收起来就再也不出现"。
+            dialect.Text = "mysql";
+            Assert.IsTrue(vm.ShowPortField, "换回有端点的方言,端口那一栏没回来。");
+        }
+    }
+
     /// <summary>没有网络端点的终端协议(串口)替身,兼动态候选项来源。</summary>
     private sealed class FakeSerialTerminal(params string[] ports)
         : PluginSdk.Protocols.IProtocolTerminal, PluginSdk.Protocols.IProtocolChoiceSource

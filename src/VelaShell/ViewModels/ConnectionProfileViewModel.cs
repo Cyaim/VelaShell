@@ -17,6 +17,7 @@ using VelaShell.Core.Ssh;
 using VelaShell.Infrastructure.Plugins.Protocols;
 using VelaShell.Infrastructure.Ssh;
 using VelaShell.PluginSdk.Protocols;
+using VelaShell.PluginSdk.Workspaces;
 using VelaShell.Presentation.Services;
 using VelaShell.Security;
 using VelaShell.Services;
@@ -158,6 +159,10 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     private readonly PluginProtocolRegistry? _protocolRegistry;
     private string? _pluginProtocolId;
     private PluginConnectionForm? _pluginForm;
+    // 套用变体**之前**的那份。变体是随字段值实时切换的,每次都要从这份原始形态重新套,
+    // 否则连着切两次方言就会把上一次的改写叠在下一次上面(SQLite 的"数据库文件"标签
+    // 会粘在随后选中的 MySQL 上)。
+    private PluginConnectionForm? _pluginBaseForm;
 
     /// <summary>编辑既有配置时读入的插件设置;表单还没渲染出来就保存的话原样带回。</summary>
     private Dictionary<string, string>? _pluginStored;
@@ -188,6 +193,9 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         ISharedCredentialRepository? sharedCredentials = null,
         ISystemKeyStore? systemKeyStore = null)
     {
+        // 最先定:编辑态下构造函数末尾那次表单装载可能同步跑完(插件已注册时没有真正的让出点),
+        // 装载完成时定步骤(T1)要读它。
+        IsEditing = existing is not null;
         _protocolRegistry = protocolRegistry;
         _systemKeyStore = systemKeyStore;
         _keyService = keyService;
@@ -382,6 +390,36 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         RefreshHostChoicesCommand = ReactiveCommand.CreateFromTask(
             RefreshHostChoicesAsync,
             this.WhenAnyValue(x => x.IsHostRefreshing, refreshing => !refreshing));
+        // 「选类型」这一步的命令(见 ConnectionProfileViewModel.TypePicker.cs)。
+        // 方法体里另有同样的守卫:canExecute 只管按钮灰不灰,直接 Execute 不看它。
+        SelectTypeCardCommand = ReactiveCommand.Create<string>(
+            SelectTypeCard,
+            this.WhenAnyValue(x => x.IsPickingType));
+        ConfirmTypeCardCommand = ReactiveCommand.Create<string>(
+            ConfirmTypeCard,
+            this.WhenAnyValue(x => x.IsPickingType, x => x.IsBusy, (picking, busy) => picking && !busy));
+        NextCommand = ReactiveCommand.Create(
+            ConfirmTypeStep,
+            this.WhenAnyValue(x => x.IsPickingType, x => x.SelectedTypeValue, x => x.IsBusy,
+                (picking, selected, busy) => picking && selected is not null && !busy));
+        BackCommand = ReactiveCommand.Create(
+            () =>
+            {
+                if (ShowBackButton)
+                {
+                    ReturnToTypeStep();
+                }
+            },
+            this.WhenAnyValue(x => x.ShowBackButton, x => x.IsBusy, (show, busy) => show && !busy));
+        ChangeTypeCommand = ReactiveCommand.Create(
+            () =>
+            {
+                if (ShowChangeTypeLink)
+                {
+                    ReturnToTypeStep();
+                }
+            },
+            this.WhenAnyValue(x => x.ShowChangeTypeLink, x => x.IsBusy, (show, busy) => show && !busy));
         // 表单是插件异步装载出来的,字段进集合的那一刻就得带上当前所在的分页 ——
         // 只在切换分页时下发是不够的(先渲染后切页,「常规」页会把高级字段全画出来)。
         // 必须在下面那句可能触发装载的 SelectPluginProtocolAsync 之前接线。
@@ -404,11 +442,13 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         if (_connectionType == ConnectionType.Plugin && _pluginProtocolId is { Length: > 0 } existingProtocol)
         {
             // 编辑既有插件协议配置:进对话框就把表单渲染出来(会触发该插件的惰性激活)。
-            _ = SelectPluginProtocolAsync(existingProtocol);
+            // 不等它(构造函数不能等),但把这次装载留在 PendingPluginLoad 上,用例据此等装载完成。
+            PendingPluginLoad = SelectPluginProtocolAsync(existingProtocol);
         }
         BrowseKeyFileCommand = ReactiveCommand.Create(() => { });
         BrowseCertificateFileCommand = ReactiveCommand.Create(() => { });
         SelectSectionCommand = ReactiveCommand.Create<ConnectionProfileSection>(section => SelectedSection = section);
+        SelectPluginPageCommand = ReactiveCommand.Create<string>(SelectPluginPage);
         SelectAuthMethodCommand = ReactiveCommand.Create<AuthMethod>(method => AuthMethod = method);
         NewSharedCredentialCommand = ReactiveCommand.CreateFromTask(NewSharedCredentialAsync);
         OpenPluginManagerCommand = ReactiveCommand.Create(() => OpenPluginManager?.Invoke());
@@ -662,6 +702,15 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         get;
         private set => this.RaiseAndSetIfChanged(ref field, value);
     }
+
+    /// <summary>
+    /// 编辑既有插件配置时,构造函数里发起的那次表单装载;新建配置时为已完成的任务。
+    /// <para>
+    /// 只给用例用:装载是异步的(可能触发插件惰性激活),而"打开一条已存配置时表单长什么样"
+    /// 必须在装载完成后才能判定。等它而不是轮询 <see cref="PluginFields" />。
+    /// </para>
+    /// </summary>
+    internal Task PendingPluginLoad { get; } = Task.CompletedTask;
 
     /// <summary>
     /// 目标主机地址(主机名或 IP)。协议可以改写它承载的东西 —— 串口在这一栏装设备名
@@ -1285,7 +1334,9 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             this.RaisePropertyChanged(nameof(IsSshOptionsSection));
             this.RaisePropertyChanged(nameof(IsForwardingSection));
             this.RaisePropertyChanged(nameof(IsAdvancedSection));
-            // 插件字段按分页分两拨:常用的在「常规」,标了 IsAdvanced 的在「高级」。
+            this.RaisePropertyChanged(nameof(IsPluginPageSection));
+            SyncPluginPageSelection();
+            // 插件字段按页键分页:「常规」、插件声明的自定义页、「高级」(见 ConnectionProfileViewModel.PluginPages.cs)。
             ApplyPluginFieldVisibility();
         }
     }
@@ -1334,12 +1385,15 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     /// <summary>是否要显示 <see cref="AdvancedBadge" />。</summary>
     public bool HasAdvancedBadge => AdvancedPluginFieldCount > 0;
 
-    /// <summary>当前适用的插件高级字段数(显示条件不成立的不算:点进去也看不到它)。</summary>
-    private int AdvancedPluginFieldCount => PluginFields.Count(f => f.IsAdvanced && IsApplicable(f));
+    /// <summary>
+    /// 「高级」页上要画的插件字段数(显示条件不成立的不算:点进去也看不到它)。
+    /// 按页键数:进了自定义页的字段哪怕标着 IsAdvanced 也不算(页键优先)。
+    /// </summary>
+    private int AdvancedPluginFieldCount => PluginFields.Count(f => IsFormRowOn(f, PluginFormPage.AdvancedKey));
 
     /// <summary>「常规」页上有没有插件字段要画(没有时连带那一节的标题一起收起)。</summary>
     public bool ShowPluginGeneralFields =>
-        IsPluginSelected && (IsPluginLoading || PluginFields.Any(f => !f.IsAdvanced && IsApplicable(f)));
+        IsPluginSelected && (IsPluginLoading || PluginFields.Any(f => IsFormRowOn(f, PluginFormPage.GeneralKey)));
 
     /// <summary>「常规」页上插件字段那一节的标题,如「S3 设置」。</summary>
     public string PluginSectionTitle =>
@@ -1371,7 +1425,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     public bool IsAdvancedSectionModified =>
         IsFtpSelected
             ? !string.IsNullOrWhiteSpace(_ftpInitialRemotePath) || _ftpServerUtcOffsetMinutes is not null
-            : PluginFields.Any(f => f.IsAdvanced
+            // 按页键认「高级」页上的字段:进了自定义页的不给「高级」点圆点(自定义页不做圆点)。
+            : PluginFields.Any(f => string.Equals(f.PageKey, PluginFormPage.AdvancedKey, StringComparison.Ordinal)
                                     && !string.Equals(f.Text, f.Field.DefaultValue ?? string.Empty, StringComparison.Ordinal));
 
     private bool IsSectionAvailable(ConnectionProfileSection section) => section switch
@@ -1380,6 +1435,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         ConnectionProfileSection.SshOptions => ShowSshOptionsSection,
         ConnectionProfileSection.Forwarding => ShowForwardingSection,
         ConnectionProfileSection.Advanced => ShowAdvancedSection,
+        ConnectionProfileSection.PluginPage => IsPluginPageAvailable,
         _ => true
     };
 
@@ -2653,11 +2709,11 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
 
     /// <summary>
     /// 按当前分页**与字段自己声明的显示条件**下发插件字段的行可见性,
-    /// 并刷新「高级」页签上的字段数与圆点。
+    /// 并刷新各自定义页签在不在、「高级」页签上的字段数与圆点。
     /// <para>
-    /// 插件字段在两页上各画一份 —— 「常规」画常用的,「高级」画标了 <c>IsAdvanced</c> 的 ——
-    /// 两份绑的是同一批行。两页同一时刻只显示一页,所以每一行只要一个可见性:
-    /// 属于当前这一页,且显示条件成立。
+    /// 插件字段在「常规」、自定义页、「高级」上各画一份,绑的是同一批行;每一行归哪一页看它的页键
+    /// (<see cref="PluginProtocolFieldViewModel.PageKey" />)。同一时刻只显示一页,所以每一行只要一个可见性:
+    /// 属于当前这一页,且是表单行(<see cref="IsFormRowOn" />)。
     /// </para>
     /// <para>
     /// 藏的是**行**而不是整个列表:行本身早就渲染好了,只是 IsVisible 变化 ——
@@ -2670,11 +2726,14 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     /// </summary>
     private void ApplyPluginFieldVisibility()
     {
-        bool advancedPage = SelectedSection == ConnectionProfileSection.Advanced;
+        string page = CurrentPluginPageKey;
         foreach (PluginProtocolFieldViewModel field in PluginFields)
         {
-            field.IsRowVisible = IsApplicable(field) && field.IsAdvanced == advancedPage;
+            // 出卡片时变体字段那一行永不显示:表头「类型:X」替代它(决策 D11)。
+            field.IsRowVisible = IsFormRowOn(field, page);
         }
+        // 一页的字段全被显示条件藏掉时,它的页签收起;停在那一页的话,下面的 RefreshSectionAvailability 落回「常规」。
+        RefreshPluginPageTabs();
         this.RaisePropertyChanged(nameof(AdvancedBadge));
         this.RaisePropertyChanged(nameof(HasAdvancedBadge));
         this.RaisePropertyChanged(nameof(IsAdvancedSectionModified));
@@ -2686,6 +2745,13 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     /// <summary>字段声明的显示条件此刻是否成立(没声明条件即恒成立)。</summary>
     private bool IsApplicable(PluginProtocolFieldViewModel field) =>
         field.Field.VisibleWhen is not { } condition || condition.IsSatisfiedBy(PluginFieldValue);
+
+    /// <summary>
+    /// 这一行会不会画在表单里:显示条件成立,且不是被「选类型」卡片替代掉的变体字段。
+    /// 行可见性、「常规」页那一节在不在、「高级」页签上的字段数用的是同一条判定 ——
+    /// 否则变体字段是「常规」页唯一的字段时,会留下一个只有标题的空节。
+    /// </summary>
+    private bool IsFormRow(PluginProtocolFieldViewModel field) => IsApplicable(field) && !IsTypePickerRow(field);
 
     /// <summary>
     /// 字段进出集合时接线/退订,并重算一次可见性。
@@ -2733,6 +2799,16 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                            or nameof(PluginProtocolFieldViewModel.SelectedChoice))
         {
             ApplyPluginFieldVisibility();
+            // 选变体的那个字段变了,连接框本身也要跟着换形态(端口、三格标签、要不要凭据)。
+            // 只在**它**变时才做:别的字段变一次就重算一遍标签是白费的通知。
+            if (sender is PluginProtocolFieldViewModel changed
+                && _pluginBaseForm?.VariantKey is { Length: > 0 } key
+                && string.Equals(changed.Key, key, StringComparison.Ordinal))
+            {
+                ApplyPluginVariant(followPort: true);
+                // 表头「类型:X」读的就是这个字段。
+                this.RaisePropertyChanged(nameof(CurrentTypeLabel));
+            }
         }
     }
 
@@ -2798,19 +2874,28 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         // 界面上再没有任何途径把它切回口令。
         NormalizeAuthMethodForProtocol();
         // 端口跟随用与内建协议**同一套**判定(它已把插件协议的默认端口一并算进「用户没手填过」)。
+        // **目标端口先算好再写一次**:当前变体声明了端口就用它,否则用页签的默认端口。
+        // 若直接写页签默认值,"选了 PostgreSQL(5432)再点一次同一个页签"会先被改写成 3306、
+        // 然后从下面的早退处返回 —— 下拉仍是 PostgreSQL,端口框却成了 3306。
+        // 换了协议时 _pluginBaseForm 还是上一个协议的,它的变体表与这个页签无关,不能拿来算。
         PluginProtocolTabViewModel? tab = PluginProtocols.FirstOrDefault(p => p.Id == protocolId);
         if (tab is not null && IsProtocolDefaultPort(Port))
         {
-            Port = tab.DefaultPort;
+            Port = (switchedProtocol ? null : CurrentVariantDefaultPort()) ?? tab.DefaultPort;
         }
         if (switchedProtocol)
         {
             // 真的换了协议:上一个协议的字段与已存值都不能留,否则等激活的这段时间里
             // 表单还是旧协议的样子,此时保存会把 A 的键值写进 B 的配置。
             ClearPluginFields();
+            _pluginBaseForm = null;
             _pluginForm = null;
+            // 上一个协议的自定义页签同理:等激活的这段时间里不能还挂在页签条上。
+            RebuildPluginPages(null);
             _pluginStored = null;
             _pluginStoredSecrets = null;
+            // T5:上一个页签的卡片与"类型已确认"不能带到这个页签上。
+            ResetTypeStep();
         }
         else if (_pluginForm is not null
                  && string.Equals(_loadedProtocolId, protocolId, StringComparison.Ordinal))
@@ -2818,6 +2903,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             // 重复点当前页签:表单已经渲染好了,直接返回。
             // 走下去会 PluginFields.Clear() 把用户填了一半的内容复位。
             RaisePluginLabelsChanged();
+            // T1:类型还没确认过就回到卡片(表单还在,步骤按同一条规则重定)。
+            EnterStepForLoadedForm();
             return;
         }
         if (_protocolRegistry is not { } registry)
@@ -2855,11 +2942,19 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 return;
             }
             applied = true;
+            // 测试接缝(见 PluginFormOverride):分页的边界情况由用例经它喂合成表单。
+            if (form is not null && PluginFormOverride is { } overrideForm)
+            {
+                form = overrideForm(form);
+            }
+            _pluginBaseForm = form;
             _pluginForm = form;
             _loadedProtocolId = protocolId;
             // 插件被禁用/装载失败:表单是空的,而 AllowsAnonymous 随之为 false,
             // 匿名配置的保存/连接会同时灰死。给一条能看懂的话,别让用户对着灰按钮猜。
             PluginUnavailable = form is null;
+            // 自定义页签先于字段建好:字段逐行进集合时的那几次下发要能算出各页签在不在。
+            RebuildPluginPages(form);
             ClearPluginFields();
             foreach (ProtocolSettingField field in _pluginForm?.Fields ?? [])
             {
@@ -2874,7 +2969,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                     : null;
                 PluginFields.Add(new(field, stored,
                     field.Kind == ProtocolSettingKind.SshSession ? EnsureSshSessionChoices() : null,
-                    field.Kind == ProtocolSettingKind.DynamicChoice ? ReloadFieldChoicesAsync : null));
+                    field.Kind == ProtocolSettingKind.DynamicChoice ? ReloadFieldChoicesAsync : null,
+                    pageKey: _pluginForm?.PageKeyFor(field)));
             }
             // 编辑既有配置时高级字段里有非默认值,「高级」页签上会点一个圆点
             // (IsAdvancedSectionModified,由下面这次下发一并刷新):用户填过的东西不能藏得看不出来,
@@ -2883,6 +2979,15 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             // 也必须在表单成形后生效一次 —— 少了这句,「主节点名」会在独立形态下先露出来,
             // 直到用户碰一下别的字段才消失。
             ApplyPluginFieldVisibility();
+            // 变体同理,而且漏了它的后果更重:变体决定要不要凭据。
+            // 打开一条已存的 SQLite 配置时,方言字段一开始就是 sqlite 却从没触发过 setter,
+            // 于是表单停在**基础描述符**那一档 —— 用户名口令两栏冒出来,还被当成必填,
+            // 表现就是一个本地文件却非要我登录。
+            // followPort: false —— 此刻端口是从已存配置里读出来的,不能被变体的默认值盖掉。
+            ApplyPluginVariant(followPort: false);
+            // T1:表单成形、变体已套上,定步骤 —— 新建且页签出卡片就先选类型。
+            // 只在这条已确认不是陈旧续体的路径上做:上面的早退处不碰步骤。
+            EnterStepForLoadedForm();
             // 动态候选项现取一次。放在最后:它可能真的去枚举硬件(串口),
             // 而表单的其余部分不该等它 —— 取不到也只是下拉是空的,手输照旧可用。
             await LoadDynamicChoicesAsync().ConfigureAwait(true);
@@ -3100,6 +3205,13 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     private void SelectConnectionType(ConnectionType connectionType)
     {
         ConnectionType previous = ConnectionType;
+        // **端口是不是"用户没手填过"必须在这里就定下来。** 下面切回内建协议那一支会把
+        // `_pluginBaseForm` 置空(三格标签只看它,不清就会留着上一个插件的措辞),
+        // 而 `IsProtocolDefaultPort` 要靠它才认得出**变体端口**。
+        // 等到方法末尾再判,5432 已经取不到变体信息、会被当成用户手填的值留下来 ——
+        // 那正是 IsProtocolDefaultPort 上那段注释("从 S3 切回 SSH 时端口停在 443")
+        // 要消灭的情形,被变体端口重新引了回来。
+        bool portWasDefault = IsProtocolDefaultPort(Port);
         ConnectionType = connectionType;
         if (connectionType != ConnectionType.Plugin)
         {
@@ -3113,10 +3225,15 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             StashPluginFieldValues();
             // 描述符也必须清:三格标签只看它、不看 ConnectionType,不清的话
             // 「S3 → SSH」之后主机那格会一直写着「服务端点」、用户名写着「Access Key ID」。
+            _pluginBaseForm = null;
             _pluginForm = null;
             ClearPluginFields();
+            // 内建协议没有自定义页:页签条上不能留着上一个插件的「数据库」「SSL」。
+            RebuildPluginPages(null);
             PluginUnavailable = false;
             RaisePluginLabelsChanged();
+            // T5:内建协议没有卡片;再点回来时由装载完成的 T1 重新定步骤。
+            ResetTypeStep();
         }
         if (previous == ConnectionType)
         {
@@ -3124,7 +3241,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         }
         NormalizeAuthMethodForProtocol();
         // 端口跟随:仅当当前端口仍是**某个协议的默认值**时才改 —— 用户手填过的端口一律不动。
-        if (IsProtocolDefaultPort(Port))
+        // 用方法入口处算好的那个值,理由见上面那段长注。
+        if (portWasDefault)
         {
             Port = DefaultPortFor(ConnectionType);
         }
@@ -3140,6 +3258,58 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         {
             AuthMethodIndex = 0;
         }
+    }
+
+    /// <summary>
+    /// 按"选变体的那个字段"的当前取值,把连接框换成对应形态。
+    /// <para>
+    /// 三样东西跟着变:三格标签、要不要凭据/匿名/端口栏、以及默认端口。
+    /// <b>端口沿用与切页签完全相同的判定</b> —— 只有用户没手填过时才跟随,
+    /// 已经改成 13306 的不会被切回 3306(那是把用户的输入吃掉)。
+    /// </para>
+    /// <para>
+    /// <paramref name="followPort" /> 在**装载表单**那一路是 <see langword="false" />:
+    /// 那时端口是从已存配置里读出来的,不该被默认值盖掉。
+    /// </para>
+    /// </summary>
+    /// <param name="followPort">是否让端口跟随变体的默认值。</param>
+    private void ApplyPluginVariant(bool followPort)
+    {
+        if (_pluginBaseForm is not { VariantKey.Length: > 0 } baseForm)
+        {
+            return;
+        }
+        _pluginForm = baseForm.ForVariant(PluginFieldValue);
+        RaisePluginLabelsChanged();
+
+        if (followPort && CurrentVariantDefaultPort() is { } port && IsProtocolDefaultPort(Port))
+        {
+            Port = port;
+        }
+    }
+
+    /// <summary>
+    /// 当前选中的变体声明的默认端口。
+    /// </summary>
+    /// <returns>
+    /// 变体的 <see cref="WorkspaceVariant.DefaultPort" />;没有变体、一个都对不上、
+    /// 或对上的那一档没声明端口时为 <see langword="null" />(沿用页签的默认端口)。
+    /// </returns>
+    private int? CurrentVariantDefaultPort()
+    {
+        if (_pluginBaseForm is not { VariantKey: { Length: > 0 } key, Variants: { Count: > 0 } variants })
+        {
+            return null;
+        }
+        string current = PluginFieldValue(key) ?? string.Empty;
+        foreach (WorkspaceVariant variant in variants)
+        {
+            if (string.Equals(variant.Value, current, StringComparison.Ordinal))
+            {
+                return variant.DefaultPort;
+            }
+        }
+        return null;
     }
 
     /// <summary>
@@ -3175,7 +3345,10 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     /// </summary>
     private bool IsProtocolDefaultPort(int port) =>
         port is 22 or FtpSettings.DefaultPort or FtpSettings.DefaultImplicitPort
-        || PluginProtocols.Any(protocol => protocol.DefaultPort == port);
+        || PluginProtocols.Any(protocol => protocol.DefaultPort == port)
+        // 变体的默认端口同样算"没手填过"。少算它们,换方言时端口就不跟随了 ——
+        // 因为 5432 不在任何一张页签默认端口表里,会被当成用户自己填的。
+        || (_pluginBaseForm?.VariantPorts().Contains(port) ?? false);
 
     private int DefaultPortFor(ConnectionType type) =>
         type switch

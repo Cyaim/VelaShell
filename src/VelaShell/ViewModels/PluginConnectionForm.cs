@@ -47,6 +47,21 @@ namespace VelaShell.ViewModels;
 /// 动态候选项的来源:协议实现自己(它同时实现了 <see cref="IProtocolChoiceSource" />)。
 /// 没实现就是 null —— 此时动态下拉退化成只有兜底列表的普通下拉,不报错。
 /// </param>
+/// <param name="VariantKey">
+/// 由哪个字段选择变体;null 表示这个连接类型没有变体。见 <see cref="WorkspaceDescriptor.VariantKey" />。
+/// </param>
+/// <param name="Variants">变体表(仅工作台形态有)。</param>
+/// <param name="Icon">
+/// 连接类型自报的图标(仅工作台形态有,取 <see cref="WorkspaceDescriptor.Icon" />);
+/// 「选类型」卡片上变体没给 <see cref="WorkspaceVariant.Icon" /> 时退回它,再为 null 时界面画通用插件图标。
+/// </param>
+/// <param name="Pages">
+/// 介于「常规」与「高级」之间的自定义分页(「数据库」「SSL」……),按声明顺序成页签;null / 空表示没有。
+/// 工作台形态取 <see cref="WorkspaceDescriptor.Pages" />;文件协议没有分页列表,恒为 null。
+/// </param>
+/// <param name="FieldPages">
+/// 字段键 → 所属分页的键(取各字段的 <see cref="ProtocolSettingField.Page" />);见 <see cref="PageKeyFor" />。
+/// </param>
 internal sealed record PluginConnectionForm(
     PluginConnectionKind Kind,
     string? HostLabel,
@@ -61,15 +76,172 @@ internal sealed record PluginConnectionForm(
     ProtocolSettingKind HostKind = ProtocolSettingKind.Text,
     IReadOnlyList<ProtocolSettingChoice>? HostChoices = null,
     bool HostAllowsCustomValue = false,
-    IProtocolChoiceSource? ChoiceSource = null)
+    IProtocolChoiceSource? ChoiceSource = null,
+    string? VariantKey = null,
+    IReadOnlyList<WorkspaceVariant>? Variants = null,
+    PluginSdk.PluginIcon? Icon = null,
+    IReadOnlyList<PluginFormPage>? Pages = null,
+    IReadOnlyDictionary<string, string>? FieldPages = null)
 {
     /// <summary>主机栏是否渲染成下拉(静态或动态)。</summary>
     public bool HostIsChoice => HostKind is ProtocolSettingKind.Choice or ProtocolSettingKind.DynamicChoice;
 
+    /// <summary>
+    /// 字段画在哪一页:<see cref="FieldPages" /> 给了键、且这个键在 <see cref="Pages" /> 里,就是那一页;
+    /// 否则按 <see cref="ProtocolSettingField.IsAdvanced" /> 去「高级」或「常规」。
+    /// <para>
+    /// <b>页键优先于 IsAdvanced</b>:填了页键的字段进那一页,IsAdvanced 不再看 ——
+    /// 「高级」带着宿主专属的行为(数量徽标、改过值的圆点),自定义页不做这几样。
+    /// </para>
+    /// <para>
+    /// <b>不认识的键按没填处理</b>(不报错):与 <c>VisibleWhen</c> 引用不存在的键同一态度,
+    /// 字段落回默认位置,用户总还找得到它。
+    /// </para>
+    /// </summary>
+    /// <param name="field">字段声明。</param>
+    /// <returns>页键:<see cref="PluginFormPage.GeneralKey" />、<see cref="PluginFormPage.AdvancedKey" /> 或某个自定义页的键。</returns>
+    public string PageKeyFor(ProtocolSettingField field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        if (FieldPages is not null
+            && FieldPages.TryGetValue(field.Key, out string? key)
+            && Pages is { Count: > 0 } pages)
+        {
+            for (int i = 0; i < pages.Count; i++)
+            {
+                if (string.Equals(pages[i].Key, key, StringComparison.Ordinal))
+                {
+                    return key;
+                }
+            }
+        }
+        return field.IsAdvanced ? PluginFormPage.AdvancedKey : PluginFormPage.GeneralKey;
+    }
+
+    /// <summary>
+    /// 新建连接时要不要先出一屏「选类型」的卡片(见 <see cref="TypePickerField" />)。
+    /// </summary>
+    public bool HasTypePicker => TypePickerField is not null;
+
+    /// <summary>
+    /// 选变体的那个字段 —— 前提是它能画成卡片;不能时为 null,表单与没有卡片时一样。
+    /// <para>
+    /// 能画成卡片 = 封闭的静态下拉、至少两个候选、用户看得见:
+    /// <see cref="ProtocolSettingKind.Choice" />、非 <see cref="ProtocolSettingField.IsHidden" />、
+    /// 非 <see cref="ProtocolSettingField.AllowsCustomValue" />、<c>Choices.Count &gt;= 2</c>。
+    /// 动态下拉(候选是现取的)、可手输的(值不在表里正是它的意义)、只有一个候选的(没得选),
+    /// 做成卡片都说不通。这是宿主的规则,不是 SDK 开关。
+    /// </para>
+    /// <para>
+    /// <see cref="Variants" /> 可以为空:变体字段只用来驱动 <c>VisibleWhen</c> 时卡片照出。
+    /// </para>
+    /// </summary>
+    public ProtocolSettingField? TypePickerField
+    {
+        get
+        {
+            if (VariantKey is not { Length: > 0 } key)
+            {
+                return null;
+            }
+            for (int i = 0; i < Fields.Count; i++)
+            {
+                ProtocolSettingField candidate = Fields[i];
+                if (string.Equals(candidate.Key, key, StringComparison.Ordinal))
+                {
+                    return candidate is { Kind: ProtocolSettingKind.Choice, IsHidden: false, AllowsCustomValue: false }
+                           && candidate.Choices.Count >= 2
+                        ? candidate
+                        : null;
+                }
+            }
+            return null;
+        }
+    }
+
     /// <summary>主机栏的候选项是否要向插件现取(并给出刷新按钮)。</summary>
     public bool HostIsDynamic => HostKind == ProtocolSettingKind.DynamicChoice;
 
-    /// <summary>从协议描述转换。</summary>
+    /// <summary>
+    /// 按当前表单取值套用变体,得到**这一刻**该显示的表单形态。
+    /// <para>
+    /// 返回的仍是一个 <see cref="PluginConnectionForm" />,于是视图模型里所有读它的地方
+    /// (三格标签、匿名判定、要不要显示凭据与端口)一行都不用改 —— 变体在这里就被抹平了。
+    /// </para>
+    /// <para>
+    /// <b>字段表不随变体变</b>:字段的显隐由 <see cref="ProtocolSettingField.VisibleWhen" /> 管,
+    /// 两者用的是同一个键。在这里再删一遍字段会把已存的值一起弄丢(见 VisibleWhen 的存取语义)。
+    /// </para>
+    /// </summary>
+    /// <param name="lookup">按键取当前值。</param>
+    /// <returns>套用变体之后的表单;没有变体或一个都对不上时返回自身。</returns>
+    public PluginConnectionForm ForVariant(Func<string, string?> lookup)
+    {
+        ArgumentNullException.ThrowIfNull(lookup);
+        if (VariantKey is not { Length: > 0 } key || Variants is not { Count: > 0 } variants)
+        {
+            return this;
+        }
+        string current = lookup(key) ?? string.Empty;
+        WorkspaceVariant? variant = null;
+        for (int i = 0; i < variants.Count; i++)
+        {
+            if (string.Equals(variants[i].Value, current, StringComparison.Ordinal))
+            {
+                variant = variants[i];
+                break;
+            }
+        }
+        if (variant is null)
+        {
+            return this;
+        }
+        WorkspaceFeatures? features = variant.Features;
+        return this with
+        {
+            HostLabel = variant.HostLabel ?? HostLabel,
+            HostPlaceholder = variant.HostPlaceholder ?? HostPlaceholder,
+            UsernameLabel = variant.UsernameLabel ?? UsernameLabel,
+            PasswordLabel = variant.PasswordLabel ?? PasswordLabel,
+            // 变体的能力位是**整体替换**,不是按位合并(见 WorkspaceVariant.Features):
+            // 四格全部按变体重算,"这一档没有端点"与"切回去又有了"由同一次覆盖负责,不会粘住。
+            AllowsAnonymous = features is { } f ? WorkspaceVariants.AllowsAnonymous(f) : AllowsAnonymous,
+            SupportsSshTunnel = features?.HasFlag(WorkspaceFeatures.SshTunnel) ?? SupportsSshTunnel,
+            ShowsCredentials = features is { } g ? !g.HasFlag(WorkspaceFeatures.NoCredentials) : ShowsCredentials,
+            ShowsPort = features is { } h ? !h.HasFlag(WorkspaceFeatures.NoEndpoint) : ShowsPort
+        };
+    }
+
+    /// <summary>
+    /// 各变体声明的默认端口。
+    /// <para>
+    /// 宿主用它判断"用户有没有手填过端口" —— 少算变体那几个,
+    /// 换方言时端口就不会跟随(5432 不在任何一张页签默认端口表里,会被当成用户手填的)。
+    /// </para>
+    /// </summary>
+    /// <returns>变体默认端口(没声明端口的变体不出现)。</returns>
+    public IEnumerable<int> VariantPorts()
+    {
+        if (Variants is not { Count: > 0 } variants)
+        {
+            yield break;
+        }
+        for (int i = 0; i < variants.Count; i++)
+        {
+            if (variants[i].DefaultPort is { } port)
+            {
+                yield return port;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 从协议描述转换。
+    /// <para>
+    /// 不填 <see cref="Pages" /> / <see cref="FieldPages" />:<see cref="ProtocolDescriptor" /> 没有分页列表,
+    /// 文件协议的字段上 <see cref="ProtocolSettingField.Page" /> 被忽略(照 SDK 契约),字段照旧按 IsAdvanced 落位。
+    /// </para>
+    /// </summary>
     /// <param name="descriptor">协议描述。</param>
     /// <param name="handler">
     /// 该协议的实现(文件系统或终端)。只用来问一件事:它认不认
@@ -107,10 +279,80 @@ internal sealed record PluginConnectionForm(
             descriptor.UsernameLabel,
             descriptor.PasswordLabel,
             descriptor.Fields,
-            descriptor.Features.HasFlag(WorkspaceFeatures.AnonymousAccess),
+            // NoCredentials 蕴含匿名:没有凭据这回事(SQLite 就是个文件),
+            // 就不能拿"用户名没填"把连接按钮堵死。与打开会话前的判定共用一条。
+            WorkspaceVariants.AllowsAnonymous(descriptor.Features),
             descriptor.Features.HasFlag(WorkspaceFeatures.SshTunnel),
             ShowsCredentials: !descriptor.Features.HasFlag(WorkspaceFeatures.NoCredentials),
             // SQLite / DuckDB 这类"就是磁盘上一个文件"的方言:端口那一栏收起,
             // 主机那一栏改标成「数据库文件」装路径。
-            ShowsPort: !descriptor.Features.HasFlag(WorkspaceFeatures.NoEndpoint));
+            ShowsPort: !descriptor.Features.HasFlag(WorkspaceFeatures.NoEndpoint),
+            VariantKey: descriptor.VariantKey,
+            Variants: descriptor.Variants,
+            Icon: descriptor.Icon,
+            Pages: PagesOf(descriptor.Pages),
+            FieldPages: FieldPagesOf(descriptor.Fields));
+
+    /// <summary>
+    /// SDK 的分页声明 → 内部模型,顺序不变。没声明(空列表)记为 null,与「没有自定义页」同一个值。
+    /// <para>
+    /// 宿主自己的键(general / advanced)与重复键不在这里筛:建页签时统一跳过,口径只留一处。
+    /// </para>
+    /// </summary>
+    /// <param name="pages">描述符的 <see cref="WorkspaceDescriptor.Pages" />。</param>
+    /// <returns>内部分页表;没有时为 null。</returns>
+    private static PluginFormPage[]? PagesOf(IReadOnlyList<ProtocolSettingPage>? pages)
+    {
+        if (pages is not { Count: > 0 })
+        {
+            return null;
+        }
+        var result = new PluginFormPage[pages.Count];
+        for (int i = 0; i < pages.Count; i++)
+        {
+            result[i] = new PluginFormPage(pages[i].Key, pages[i].Label);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// 填了 <see cref="ProtocolSettingField.Page" /> 的字段 → 字段键到页键的字典(序数比较);一个都没填时为 null。
+    /// <para>
+    /// 页键在不在分页表里不在这里判:<see cref="PageKeyFor" /> 把不认识的键按没填处理(SDK 契约:不报错)。
+    /// 字段键重复时只认第一次,不因插件声明有误抛异常把整个表单弄没。
+    /// </para>
+    /// </summary>
+    /// <param name="fields">描述符的字段表。</param>
+    /// <returns>字段键 → 页键;没有字段声明分页时为 null。</returns>
+    private static Dictionary<string, string>? FieldPagesOf(IReadOnlyList<ProtocolSettingField> fields)
+    {
+        Dictionary<string, string>? result = null;
+        for (int i = 0; i < fields.Count; i++)
+        {
+            if (fields[i] is { Page: { } page } field)
+            {
+                result ??= new Dictionary<string, string>(StringComparer.Ordinal);
+                result.TryAdd(field.Key, page);
+            }
+        }
+        return result;
+    }
+}
+
+/// <summary>
+/// 连接对话框里插件声明的一个自定义分页(「数据库」「SSL」……),介于「常规」与「高级」之间。
+/// <para>
+/// 用键而不是枚举:这些是领域页,宿主没法为任意插件预备一套封闭的文案;显隐与测试都按键比较,
+/// 文案换语言不影响。「常规」「高级」由宿主出文案,不在插件的分页表里 —— 两个常量只是它们在页键上的名字。
+/// </para>
+/// </summary>
+/// <param name="Key">页键:稳定标识,序数比较。</param>
+/// <param name="Label">页签文案(插件自行本地化)。</param>
+internal sealed record PluginFormPage(string Key, string Label)
+{
+    /// <summary>「常规」页的页键:没有页键、也没标 IsAdvanced 的字段在这里。</summary>
+    public const string GeneralKey = "general";
+
+    /// <summary>「高级」页的页键:没有页键、标了 IsAdvanced 的字段在这里。</summary>
+    public const string AdvancedKey = "advanced";
 }

@@ -53,6 +53,53 @@ public partial class ConnectionProfileView : Window
         {
             formContent.AddHandler(RequestBringIntoViewEvent, OnFormRequestBringIntoView);
         }
+        // 双击类型卡片 = 选中并下一步。挂在卡片列表上(卡片是模板生成的,逐个挂要跟着集合增删)。
+        // 连已处理的也收:卡片内容里哪个控件先把这次双击标成已处理,也不该吞掉「下一步」。
+        TypeCardsList.AddHandler(DoubleTappedEvent, OnTypeCardDoubleTapped, handledEventsToo: true);
+        // 卡片上按 Enter = 选中并下一步(与双击同义),Space 仍只选中。走隧道:卡片是 Button,
+        // 冒泡到它自己时它会把 Enter 当一次点击(只选中)并标成已处理,对话框级的「下一步」(IsDefault)就收不到了。
+        TypeCardsList.AddHandler(KeyDownEvent, OnTypeCardKeyDown, RoutingStrategies.Tunnel);
+    }
+
+    /// <summary>双击卡片:选中它并直接进表单(等于单击 + 「下一步」)。</summary>
+    private void OnTypeCardDoubleTapped(object? sender, TappedEventArgs e) => ConfirmTypeCard(e);
+
+    /// <summary>卡片上按 Enter:同双击。其余按键(Space 选中、Tab 换卡)照常交给卡片自己。</summary>
+    private void OnTypeCardKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            ConfirmTypeCard(e);
+        }
+    }
+
+    /// <summary>事件来自某张卡片时,选中它并直接进表单(ConfirmTypeCard);不是来自卡片的不碰。</summary>
+    private void ConfirmTypeCard(RoutedEventArgs e)
+    {
+        if (DataContext is not ConnectionProfileViewModel viewModel
+            || (e.Source as Visual)?.FindAncestorOfType<Button>(includeSelf: true)?.DataContext
+                is not PluginTypeCardViewModel card)
+        {
+            return;
+        }
+        viewModel.ConfirmTypeCardCommand.Execute(card.Value).Subscribe();
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// 进到卡片那一屏时把焦点放到选中的那张上:键盘用户接着就能 Tab / Space 选别的,Enter 进下一步。
+    /// 不走 Tab 式聚焦 —— 那会挂上 :focus-visible 的描边,鼠标点进来的人看到的是一圈卡住的高亮。
+    /// </summary>
+    private void FocusSelectedTypeCard()
+    {
+        if (DataContext is not ConnectionProfileViewModel { IsPickingType: true })
+        {
+            return;
+        }
+        TypeCardsList.GetVisualDescendants()
+            .OfType<Button>()
+            .FirstOrDefault(button => button.DataContext is PluginTypeCardViewModel { IsSelected: true })
+            ?.Focus();
     }
 
     /// <summary>
@@ -132,15 +179,16 @@ public partial class ConnectionProfileView : Window
         {
             return;
         }
-        Button target = viewModel.SelectedSection switch
+        Button? target = viewModel.SelectedSection switch
         {
             ConnectionProfileSection.Terminal => TerminalTab,
             ConnectionProfileSection.SshOptions => SshOptionsTab,
             ConnectionProfileSection.Forwarding => ForwardingTab,
             ConnectionProfileSection.Advanced => AdvancedTab,
+            ConnectionProfileSection.PluginPage => PluginPageTab(viewModel.SelectedPluginPageKey),
             _ => GeneralTab
         };
-        if (!target.IsVisible || target.Bounds.Width <= 0)
+        if (target is null || !target.IsVisible || target.Bounds.Width <= 0)
         {
             return;
         }
@@ -170,6 +218,14 @@ public partial class ConnectionProfileView : Window
         }
     }
 
+    /// <summary>自定义页签里页键为 <paramref name="key" /> 的那一个(模板生成的,按 Tag 找);还没建出来时为 null。</summary>
+    private Button? PluginPageTab(string? key) =>
+        key is null
+            ? null
+            : PluginPageTabs.GetVisualDescendants()
+                .OfType<Button>()
+                .FirstOrDefault(button => button.Tag is string tag && string.Equals(tag, key, StringComparison.Ordinal));
+
     private void OnOpened(object? sender, EventArgs e) => FireAndForget.Run(async () =>
     {
         if (DataContext is not ConnectionProfileViewModel viewModel)
@@ -190,10 +246,17 @@ public partial class ConnectionProfileView : Window
         // 换协议也要盯:页签随之增减,选中那一页的按钮位置跟着挪(或者被收起、落回「常规」)。
         viewModel.PropertyChanged += (_, args) =>
         {
+            // 自定义页之间切换时 SelectedSection 不变(都是 PluginPage),只有页键变。
             if (args.PropertyName is nameof(ConnectionProfileViewModel.SelectedSection)
-                or nameof(ConnectionProfileViewModel.ConnectionType))
+                or nameof(ConnectionProfileViewModel.ConnectionType)
+                or nameof(ConnectionProfileViewModel.SelectedPluginPageKey))
             {
                 UpdateSectionTabIndicator();
+            }
+            // 卡片要等这一轮布局把它们建出来才聚焦得到,推迟到布局之后。
+            if (args.PropertyName is nameof(ConnectionProfileViewModel.IsPickingType) && viewModel.IsPickingType)
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(FocusSelectedTypeCard, Avalonia.Threading.DispatcherPriority.Loaded);
             }
         };
         UpdateSectionTabIndicator();

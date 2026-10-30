@@ -4,15 +4,23 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using NSubstitute;
 using ReactiveUI.Primitives;
 using VelaShell.Behaviors;
+using VelaShell.Controls.Controls;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
+using VelaShell.Infrastructure.Plugins.Protocols;
+using VelaShell.PluginSdk.Protocols;
+using VelaShell.PluginSdk.Workspaces;
 using VelaShell.Presentation.Services;
 using VelaShell.Security;
+using VelaShell.Services;
+using VelaShell.Tests.TestSupport;
 using VelaShell.ViewModels;
 using VelaShell.Views;
 
@@ -581,6 +589,516 @@ public sealed class ConnectionProfileViewUiTests
             }
         }, CancellationToken.None).GetAwaiter().GetResult();
     }
+
+    // ============================== 选类型那一屏(卡片 → 下一步 → 表单) ==============================
+
+    private const string DbId = "test.db";
+    private const string DialectKey = "dialect";
+    private const string DialectLabel = "Database type";
+
+    private sealed class NoopWorkspace : IWorkspaceProvider
+    {
+        public Task<IWorkspaceDocument> OpenAsync(
+            WorkspaceConnectRequest request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// 数据库式的工作台:「类型」选 MySQL(3306)/ PostgreSQL(5432)/ SQLite(文件,无端点无凭据)。
+    /// 描述符**不带图标**:卡片要画协议栏同款的通用插头(视图层兜底)。
+    /// </summary>
+    private static PluginProtocolRegistry DbRegistry(out IDisposable handle)
+    {
+        var registry = new PluginProtocolRegistry();
+        handle = registry.RegisterWorkspace(DbId, new WorkspaceDescriptor
+        {
+            Id = DbId,
+            DisplayName = "Database",
+            DefaultPort = 3306,
+            Fields =
+            [
+                new()
+                {
+                    Key = DialectKey,
+                    Label = DialectLabel,
+                    Kind = ProtocolSettingKind.Choice,
+                    DefaultValue = "mysql",
+                    Choices = [new("mysql", "MySQL"), new("postgresql", "PostgreSQL"), new("sqlite", "SQLite")]
+                },
+                new() { Key = "database", Label = "Database name", Kind = ProtocolSettingKind.Text }
+            ],
+            VariantKey = DialectKey,
+            Variants =
+            [
+                new() { Value = "mysql", DefaultPort = 3306 },
+                new() { Value = "postgresql", DefaultPort = 5432 },
+                new()
+                {
+                    Value = "sqlite",
+                    DefaultPort = 1,
+                    HostLabel = "Database file",
+                    Features = WorkspaceFeatures.NoCredentials | WorkspaceFeatures.NoEndpoint
+                }
+            ]
+        }, new NoopWorkspace());
+        return registry;
+    }
+
+    private static List<Button> TypeTiles(Window window) =>
+        window.GetVisualDescendants().OfType<Button>().Where(button => button.Classes.Contains("type-tile")).ToList();
+
+    private static string? TileName(Button tile) =>
+        tile.GetVisualDescendants().OfType<TextBlock>().Single(text => text.Classes.Contains("type-tile-name")).Text;
+
+    private static bool[] TileSelection(Window window) =>
+        TypeTiles(window).Select(tile => tile.Classes.Contains("selected")).ToArray();
+
+    /// <summary>页脚右侧此刻看得见的按钮,按从左到右的顺序。</summary>
+    private static string?[] VisibleFooterButtons(Window window) =>
+        window.FindControl<Button>("ConnectButton")!.GetVisualParent<StackPanel>()!.Children
+            .OfType<Button>()
+            .Where(button => button.IsVisible)
+            .Select(button => button.Name)
+            .ToArray();
+
+    private static void Layout(Window window)
+    {
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    /// <summary>在控件正中按下松开左键(与用户的手势一样走命中测试);<paramref name="twice" /> 为双击。</summary>
+    private static void Click(Window window, Control target, bool twice = false)
+    {
+        Point at = target.TranslatePoint(new Point(target.Bounds.Width / 2, target.Bounds.Height / 2), window)
+            ?? throw new AssertFailedException($"{target} is not in the window.");
+        window.MouseDown(at, MouseButton.Left);
+        window.MouseUp(at, MouseButton.Left);
+        if (twice)
+        {
+            window.MouseDown(at, MouseButton.Left);
+            window.MouseUp(at, MouseButton.Left);
+        }
+        Layout(window);
+    }
+
+    /// <summary>
+    /// 设了 <c>VELASHELL_VISUAL_QA_DIR</c> 才把这一帧存成 PNG 给人看(与 DockMotionUiTests 等同一个开关);
+    /// 没设时什么也不做,断言不依赖它。
+    /// </summary>
+    private static void SaveOptionalFrame(TopLevel topLevel, string fileName)
+    {
+        string? directory = Environment.GetEnvironmentVariable("VELASHELL_VISUAL_QA_DIR");
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(directory);
+        using WriteableBitmap? frame = topLevel.CaptureRenderedFrame();
+        Assert.IsNotNull(frame, "Skia headless renderer should produce a visual-QA frame.");
+        using FileStream output = File.Create(Path.Combine(directory, fileName));
+        frame.Save(output, PngBitmapEncoderOptions.Default);
+    }
+
+    /// <summary>
+    /// <b>新建连接点进数据库页签:右栏换成一屏卡片,一个候选项一张;页脚只剩 [取消][下一步]</b>(附录 A 第一行)。
+    /// <para>
+    /// 页签条与表单收起,连接目标预览也收起(还没有端点);默认那一档(MySQL)高亮;
+    /// 描述符没给图标时卡片画通用插头;「下一步」是对话框级默认按钮,与「取消」同高。
+    /// 单击另一张只换高亮,不离开卡片。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public Task TypePicker_RendersOneCardPerChoice_AndFooterShowsCancelNext() => _session.RunOnUiAsync(async () =>
+    {
+        PluginProtocolRegistry registry = DbRegistry(out IDisposable handle);
+        using (handle)
+        {
+            var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
+            var window = new ConnectionProfileView { DataContext = vm };
+            window.Show();
+            try
+            {
+                await vm.SelectPluginProtocolCommand.Execute(DbId).FirstAsync();
+                Layout(window);
+                Assert.IsTrue(vm.IsPickingType, "前提:新建连接点进带类型的页签,先停在卡片上。");
+                Assert.IsTrue(window.FindControl<ScrollViewer>("TypePickerPanel")!.IsEffectivelyVisible, "卡片面板应出现。");
+                Assert.IsFalse(window.FindControl<ScrollViewer>("FormScroll")!.IsEffectivelyVisible, "卡片那一屏不显示表单。");
+                Assert.IsFalse(window.FindControl<Button>("GeneralTab")!.IsEffectivelyVisible, "卡片那一屏不显示分页页签条。");
+                Assert.IsFalse(window.FindControl<StackPanel>("TypeHeader")!.IsEffectivelyVisible, "还在卡片上,表头不出现。");
+
+                List<Button> tiles = TypeTiles(window);
+                CollectionAssert.AreEqual(new[] { "MySQL", "PostgreSQL", "SQLite" }, tiles.Select(TileName).ToArray(),
+                    "一个候选项一张卡片,顺序同候选项。");
+                Assert.IsTrue(tiles.All(tile => tile.IsEffectivelyVisible && tile.IsTabStop), "卡片都要看得见、Tab 得到。");
+                Assert.IsTrue(tiles.All(tile => tile.Bounds is { Width: 112, Height: 88 }), "磁贴 112×88(DESIGN.md §5.2)。");
+                CollectionAssert.AreEqual(new[] { true, false, false }, TileSelection(window), "默认那一档预选、只有它高亮。");
+                Assert.IsTrue(tiles.All(tile => tile.Transitions is null || tile.Transitions.Count == 0),
+                    "磁贴不挂画刷过渡(#577)。");
+                Geometry? plug = ConnectionIcon.GeometryFor(ConnectionIcon.PluginKey);
+                Assert.IsNotNull(plug);
+                Assert.IsTrue(tiles.All(tile => ReferenceEquals(tile.GetVisualDescendants().OfType<LucideIcon>().Single().Data, plug)),
+                    "描述符没给图标:卡片画协议栏同款的通用插头,而不是空着。");
+
+                CollectionAssert.AreEqual(new[] { "PickTypeCancelButton", "NextButton" }, VisibleFooterButtons(window),
+                    "卡片那一屏页脚只有 [取消][下一步]。");
+                Assert.IsFalse(window.FindControl<Grid>("EndpointPreviewRow")!.IsEffectivelyVisible, "还没有端点,预览收起。");
+                Button next = window.FindControl<Button>("NextButton")!;
+                Button cancel = window.FindControl<Button>("PickTypeCancelButton")!;
+                Assert.IsTrue(next.IsDefault, "对话框级 Enter = 下一步。");
+                Assert.IsTrue(next.IsEffectivelyEnabled, "预选了一档,「下一步」立即可用。");
+                Assert.AreEqual(next.Bounds.Height, cancel.Bounds.Height, "同一排按钮同高(DESIGN.md §5.1)。");
+                SaveOptionalFrame(window, "type-picker-cards.png");
+
+                Click(window, tiles[1]);
+                Assert.IsTrue(vm.IsPickingType, "单击只选不走。");
+                CollectionAssert.AreEqual(new[] { false, true, false }, TileSelection(window), "高亮跟到点的那张。");
+                Assert.AreEqual("postgresql", vm.SelectedTypeValue);
+            }
+            finally
+            {
+                window.Close();
+            }
+        }
+    });
+
+    /// <summary>
+    /// <b>点「下一步」进表单:页签条与表单回来,页脚换成 [上一步][测试][保存][连接],表头写着选定的类型</b>(附录 A 第二行)。
+    /// <para>
+    /// 新建时表头不带「更换」(回卡片走「上一步」)。点「上一步」回到卡片、高亮停在刚选的那张;
+    /// 双击另一张 = 选中并下一步,直接回到表单(代码后置挂的 DoubleTapped)。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public Task TypePicker_AfterNext_FooterShowsBackTestSaveConnect_AndTabsReturn() => _session.RunOnUiAsync(async () =>
+    {
+        PluginProtocolRegistry registry = DbRegistry(out IDisposable handle);
+        using (handle)
+        {
+            var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
+            var window = new ConnectionProfileView { DataContext = vm };
+            window.Show();
+            try
+            {
+                await vm.SelectPluginProtocolCommand.Execute(DbId).FirstAsync();
+                Layout(window);
+                Click(window, TypeTiles(window)[1]);
+                Click(window, window.FindControl<Button>("NextButton")!);
+                Assert.IsFalse(vm.IsPickingType, "点了「下一步」应进表单。");
+                Assert.IsFalse(window.FindControl<ScrollViewer>("TypePickerPanel")!.IsEffectivelyVisible, "卡片面板收起。");
+                Assert.IsTrue(window.FindControl<ScrollViewer>("FormScroll")!.IsEffectivelyVisible, "表单回来。");
+                Assert.IsTrue(window.FindControl<Button>("GeneralTab")!.IsEffectivelyVisible, "分页页签条回来。");
+                Assert.IsTrue(window.FindControl<StackPanel>("TypeHeader")!.IsEffectivelyVisible, "表单顶部出「类型」那一行。");
+                Assert.AreEqual("PostgreSQL", window.FindControl<TextBlock>("TypeHeaderValue")!.Text);
+                Assert.IsFalse(window.FindControl<Button>("ChangeTypeLink")!.IsEffectivelyVisible, "新建时没有「更换」。");
+                Assert.IsFalse(window.GetVisualDescendants().OfType<TextBlock>()
+                        .Any(text => text.Text == DialectLabel && text.IsEffectivelyVisible),
+                    "表单里那一行类型下拉不再出现,由表头替代(D11)。");
+                Assert.AreEqual(5432, vm.Port, "端口跟到 PostgreSQL 的默认值。");
+
+                CollectionAssert.AreEqual(new[] { "BackButton", "TestButton", "SaveButton", "ConnectButton" },
+                    VisibleFooterButtons(window), "新建的表单:[上一步][测试][保存][连接]。");
+                Assert.IsTrue(window.FindControl<Grid>("EndpointPreviewRow")!.IsEffectivelyVisible, "表单阶段照旧显示连接目标预览。");
+                Button back = window.FindControl<Button>("BackButton")!;
+                Assert.IsTrue(back.IsEffectivelyEnabled);
+                Assert.AreEqual(window.FindControl<Button>("ConnectButton")!.Bounds.Height, back.Bounds.Height, "同一排按钮同高。");
+                SaveOptionalFrame(window, "type-picker-form-new.png");
+
+                Click(window, back);
+                Assert.IsTrue(vm.IsPickingType, "「上一步」回到卡片。");
+                Assert.IsTrue(window.FindControl<ScrollViewer>("TypePickerPanel")!.IsEffectivelyVisible);
+                CollectionAssert.AreEqual(new[] { false, true, false }, TileSelection(window), "回来时高亮停在当前类型上。");
+
+                Click(window, TypeTiles(window)[0], twice: true);
+                Assert.IsFalse(vm.IsPickingType, "双击卡片 = 选中并下一步。");
+                Assert.AreEqual("MySQL", window.FindControl<TextBlock>("TypeHeaderValue")!.Text);
+                Assert.AreEqual(3306, vm.Port, "端口还是默认值,跟到 MySQL。");
+            }
+            finally
+            {
+                window.Close();
+            }
+        }
+    });
+
+    /// <summary>
+    /// <b>编辑已存的连接:直接是表单,表头「类型 PostgreSQL · 更换」,页脚没有「上一步」</b>(附录 A 第三行)。
+    /// <para>点「更换」回到卡片,高亮在当前类型上;编辑态的卡片那一屏同样是 [取消][下一步]。</para>
+    /// </summary>
+    [TestMethod]
+    public Task TypePicker_EditMode_ShowsChangeLink_NoBack() => _session.RunOnUiAsync(async () =>
+    {
+        PluginProtocolRegistry registry = DbRegistry(out IDisposable handle);
+        using (handle)
+        {
+            var vm = new ConnectionProfileViewModel(new SessionProfile
+            {
+                Name = "orders",
+                ConnectionType = ConnectionType.Plugin,
+                PluginProtocolId = DbId,
+                Host = "db.internal",
+                Port = 5432,
+                Username = "app",
+                PluginSettings = new(StringComparer.Ordinal) { [DialectKey] = "postgresql", ["database"] = "orders" }
+            }, protocolRegistry: registry);
+            await vm.PendingPluginLoad;
+            var window = new ConnectionProfileView { DataContext = vm };
+            window.Show();
+            try
+            {
+                Layout(window);
+                Assert.IsTrue(vm.IsEditing);                Assert.IsFalse(vm.IsPickingType, "编辑已有配置不先出卡片。");
+
+                Assert.IsTrue(window.FindControl<ScrollViewer>("FormScroll")!.IsEffectivelyVisible);
+                Assert.IsTrue(window.FindControl<Button>("GeneralTab")!.IsEffectivelyVisible);
+                Assert.IsFalse(window.FindControl<ScrollViewer>("TypePickerPanel")!.IsEffectivelyVisible);
+                Assert.IsTrue(window.FindControl<StackPanel>("TypeHeader")!.IsEffectivelyVisible);
+                Assert.AreEqual("PostgreSQL", window.FindControl<TextBlock>("TypeHeaderValue")!.Text);
+                Button change = window.FindControl<Button>("ChangeTypeLink")!;
+                Assert.IsTrue(change.IsEffectivelyVisible, "编辑态改类型走表头的「更换」。");
+                Assert.IsFalse(window.GetVisualDescendants().OfType<TextBlock>()
+                        .Any(text => text.Text == DialectLabel && text.IsEffectivelyVisible),
+                    "编辑态同样不显示那一行类型下拉(D11)。");
+                CollectionAssert.AreEqual(new[] { "TestButton", "SaveButton", "ConnectButton" }, VisibleFooterButtons(window),
+                    "编辑态的表单没有「上一步」。");
+                SaveOptionalFrame(window, "type-picker-form-edit.png");
+
+                Click(window, change);
+                Assert.IsTrue(vm.IsPickingType, "「更换」回到卡片。");
+                Assert.IsTrue(window.FindControl<ScrollViewer>("TypePickerPanel")!.IsEffectivelyVisible);
+                CollectionAssert.AreEqual(new[] { false, true, false }, TileSelection(window), "高亮在当前类型(PostgreSQL)上。");
+                CollectionAssert.AreEqual(new[] { "PickTypeCancelButton", "NextButton" }, VisibleFooterButtons(window));
+            }
+            finally
+            {
+                window.Close();
+            }
+        }
+    });
+
+    /// <summary>打开新建对话框、点进数据库页签,停在卡片那一屏;把键盘焦点放到第 <paramref name="index" /> 张卡片上。</summary>
+    private static async Task<(ConnectionProfileViewModel Vm, ConnectionProfileView Window)> OpenCardsWithFocusOnAsync(
+        PluginProtocolRegistry registry, int index)
+    {
+        var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
+        var window = new ConnectionProfileView { DataContext = vm };
+        window.Show();
+        await vm.SelectPluginProtocolCommand.Execute(DbId).FirstAsync();
+        Layout(window);
+        Assert.IsTrue(vm.IsPickingType, "前提:停在卡片上。");
+        Button card = TypeTiles(window)[index];
+        Assert.IsTrue(card.Focus(NavigationMethod.Tab), "前提:卡片拿得到键盘焦点。");
+        Layout(window);
+        Assert.IsTrue(card.IsFocused);
+        return (vm, window);
+    }
+
+    /// <summary>
+    /// <b>焦点在卡片上按 Enter = 选中这张并进入下一步</b>(与双击同义)。
+    /// <para>
+    /// 进卡片那一屏时焦点就落在卡片上;卡片是 Button,不拦的话它把 Enter 当一次点击(只选中)吞掉,
+    /// 对话框级的「下一步」(IsDefault)收不到,键盘用户按 Enter 永远停在卡片上。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public Task TypePicker_EnterOnAFocusedCard_SelectsItAndGoesToTheForm() => _session.RunOnUiAsync(async () =>
+    {
+        PluginProtocolRegistry registry = DbRegistry(out IDisposable handle);
+        using (handle)
+        {
+            (ConnectionProfileViewModel vm, ConnectionProfileView window) = await OpenCardsWithFocusOnAsync(registry, 1);
+            try
+            {
+                window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                window.KeyReleaseQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                Layout(window);
+
+                Assert.IsFalse(vm.IsPickingType, "卡片上按 Enter 应选中并进入下一步。");
+                Assert.AreEqual("PostgreSQL", vm.CurrentTypeLabel, "类型是按 Enter 的那张卡。");
+                Assert.AreEqual("PostgreSQL", window.FindControl<TextBlock>("TypeHeaderValue")!.Text);
+                Assert.AreEqual(5432, vm.Port, "端口跟到 PostgreSQL 的默认值。");
+                Assert.IsTrue(window.FindControl<ScrollViewer>("FormScroll")!.IsEffectivelyVisible, "表单回来。");            }
+            finally
+            {
+                window.Close();
+            }
+        }
+    });
+
+    /// <summary><b>焦点在卡片上按 Space 只选中</b>:高亮换过去,仍停在卡片那一屏,类型与端口都没被碰。</summary>
+    [TestMethod]
+    public Task TypePicker_SpaceOnAFocusedCard_OnlySelectsIt() => _session.RunOnUiAsync(async () =>
+    {
+        PluginProtocolRegistry registry = DbRegistry(out IDisposable handle);
+        using (handle)
+        {
+            (ConnectionProfileViewModel vm, ConnectionProfileView window) = await OpenCardsWithFocusOnAsync(registry, 1);
+            try
+            {
+                window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                Layout(window);
+
+                Assert.IsTrue(vm.IsPickingType, "Space 只选中,不离开卡片。");
+                Assert.AreEqual("postgresql", vm.SelectedTypeValue, "选中的是按 Space 的那张卡。");
+                CollectionAssert.AreEqual(new[] { false, true, false }, TileSelection(window), "高亮跟到那张卡。");
+                Assert.AreEqual("MySQL", vm.CurrentTypeLabel, "还没点下一步,类型不变。");
+                Assert.AreEqual(3306, vm.Port, "还没点下一步,端口不动。");            }
+            finally
+            {
+                window.Close();
+            }
+        }
+    });
+
+    // ============================== 插件自定义页(按页键分页) ==============================
+
+    /// <summary>
+    /// 模拟 MySQL 的合成表单:类型(出卡片)、「数据库」页放默认库与 schema、「SSL」页放 SSL 档位、
+    /// 「高级」放连接超时。经 <c>PluginFormOverride</c> 喂进去,界面用例不依赖插件描述符的写法。
+    /// </summary>
+    private static PluginConnectionForm PagedMySqlForm() =>
+        new(PluginConnectionKind.Workspace,
+            HostLabel: null,
+            HostPlaceholder: null,
+            UsernameLabel: null,
+            PasswordLabel: null,
+            Fields:
+            [
+                new()
+                {
+                    Key = DialectKey,
+                    Label = DialectLabel,
+                    Kind = ProtocolSettingKind.Choice,
+                    DefaultValue = "mysql",
+                    Choices = [new("mysql", "MySQL"), new("postgresql", "PostgreSQL"), new("sqlite", "SQLite")]
+                },
+                new() { Key = "database", Label = "默认数据库", Placeholder = "连接后先进入的库(可留空)" },
+                new() { Key = "schema", Label = "Schema", Placeholder = "可留空" },
+                new()
+                {
+                    Key = "sslMode",
+                    Label = "SSL 模式",
+                    Kind = ProtocolSettingKind.Choice,
+                    DefaultValue = "preferred",
+                    Choices = [new("disabled", "禁用"), new("preferred", "优先"), new("required", "必须"), new("verify-ca", "校验 CA")]
+                },
+                new() { Key = "timeout", Label = "连接超时(秒)", Kind = ProtocolSettingKind.Integer, DefaultValue = "15", IsAdvanced = true }
+            ],
+            AllowsAnonymous: false,
+            SupportsSshTunnel: false,
+            ShowsCredentials: true,
+            VariantKey: DialectKey,
+            Variants:
+            [
+                new() { Value = "mysql", DefaultPort = 3306 },
+                new() { Value = "postgresql", DefaultPort = 5432 },
+                new() { Value = "sqlite", DefaultPort = 1, Features = WorkspaceFeatures.NoCredentials | WorkspaceFeatures.NoEndpoint }
+            ],
+            Pages: [new("database", "数据库"), new("ssl", "SSL")],
+            FieldPages: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["database"] = "database",
+                ["schema"] = "database",
+                ["sslMode"] = "ssl"
+            });
+
+    /// <summary>页签条上此刻看得见的页签,从左到右。</summary>
+    private static List<Button> VisibleSectionTabs(Window window) =>
+        window.GetVisualDescendants().OfType<Button>()
+            .Where(button => button.Classes.Contains("section-tab") && button.IsEffectivelyVisible)
+            .OrderBy(button => button.TranslatePoint(default, window)?.X ?? double.NaN)
+            .ToList();
+
+    private static bool LabelShowing(Window window, string label) =>
+        window.GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == label && text.IsEffectivelyVisible);
+
+    /// <summary>
+    /// <b>插件声明的自定义页签画在「常规」与「高级」之间,点进去只露出那一页的字段</b>。
+    /// <para>
+    /// 卡片那一屏整条页签条收起,自定义页签跟着收;「下一步」之后是 [常规][数据库][SSL][高级],
+    /// 与内建页签同一个主题、同样的间距;点「数据库」:页签高亮、下划线滑过去、只露出默认库与 schema。
+    /// 设了 <c>VELASHELL_VISUAL_QA_DIR</c> 时把停在「数据库」页的这一帧存成 plugin-pages-database.png。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public Task PluginPageTabs_RenderBetweenGeneralAndAdvanced() => _session.RunOnUiAsync(async () =>
+    {
+        PluginProtocolRegistry registry = DbRegistry(out IDisposable handle);
+        using (handle)
+        {
+            PluginConnectionForm form = PagedMySqlForm();
+            var vm = new ConnectionProfileViewModel(protocolRegistry: registry)
+            {
+                Host = "10.0.0.9",
+                Username = "root",
+                PluginFormOverride = _ => form
+            };
+            var window = new ConnectionProfileView { DataContext = vm };
+            window.Show();
+            try
+            {
+                await vm.SelectPluginProtocolCommand.Execute(DbId).FirstAsync();
+                Layout(window);
+                Assert.IsTrue(vm.IsPickingType, "前提:新建连接先停在卡片上。");
+                ItemsControl pageTabs = window.FindControl<ItemsControl>("PluginPageTabs")!;
+                Assert.IsFalse(pageTabs.IsEffectivelyVisible, "卡片那一屏整条页签条收起,自定义页签跟着收。");
+
+                Click(window, window.FindControl<Button>("NextButton")!);
+                Assert.IsFalse(vm.IsPickingType, "前提:「下一步」之后进表单。");
+
+                List<Button> tabs = VisibleSectionTabs(window);
+                Button general = window.FindControl<Button>("GeneralTab")!;
+                Button advanced = window.FindControl<Button>("AdvancedTab")!;
+                CollectionAssert.AreEqual(
+                    new object?[] { null, "database", "ssl", null },
+                    tabs.Select(tab => tab.Tag).ToArray(),
+                    "页签从左到右:常规、数据库、SSL、高级。");
+                Assert.AreSame(general, tabs[0]);
+                Assert.AreSame(advanced, tabs[3]);
+                CollectionAssert.AreEqual(new[] { "数据库", "SSL" },
+                    tabs.Skip(1).Take(2).Select(tab => tab.GetVisualDescendants().OfType<TextBlock>().First().Text).ToArray());
+                Assert.IsTrue(tabs.All(tab => tab.Theme == general.Theme && tab.Bounds.Height == general.Bounds.Height),
+                    "自定义页签与「常规」同一个主题、同高。");
+                double Left(Button tab) => tab.TranslatePoint(default, window)?.X ?? double.NaN;
+                for (int i = 1; i < tabs.Count; i++)
+                {
+                    double gap = Left(tabs[i]) - (Left(tabs[i - 1]) + tabs[i - 1].Bounds.Width);
+                    Assert.AreEqual(2, gap, 0.01, $"页签 {i - 1}→{i} 的间距与内建页签一致(2)。");
+                }
+                Assert.IsTrue(general.Classes.Contains("selected"));
+                Assert.IsFalse(tabs[1].Classes.Contains("selected"));
+
+                Click(window, tabs[1]);
+                Assert.IsTrue(vm.IsPluginPageSection, "点「数据库」页签进那一页。");
+                Assert.AreEqual("database", vm.SelectedPluginPageKey);
+                Assert.IsTrue(tabs[1].Classes.Contains("selected"), "「数据库」页签高亮。");
+                Assert.IsFalse(tabs[2].Classes.Contains("selected"));
+                Assert.IsFalse(general.Classes.Contains("selected"));
+                AssertIndicatorAligned(window.FindControl<Border>("SectionTabIndicator")!, tabs[1]);
+                Assert.IsTrue(window.FindControl<StackPanel>("PluginPageSection")!.IsEffectivelyVisible);
+                Assert.IsTrue(LabelShowing(window, "默认数据库"));
+                Assert.IsTrue(LabelShowing(window, "Schema"));
+                Assert.IsFalse(LabelShowing(window, "SSL 模式"), "别的自定义页的字段不露出来。");
+                Assert.IsFalse(LabelShowing(window, "连接超时(秒)"), "「高级」的字段不露出来。");
+                Assert.IsFalse(window.GetVisualDescendants().OfType<TextBox>()
+                        .Any(box => box.Text == "10.0.0.9" && box.IsEffectivelyVisible),
+                    "「常规」页的主机那一栏不在这一页上。");
+                SaveOptionalFrame(window, "plugin-pages-database.png");
+
+                Click(window, tabs[2]);
+                Assert.AreEqual("ssl", vm.SelectedPluginPageKey);
+                AssertIndicatorAligned(window.FindControl<Border>("SectionTabIndicator")!, tabs[2]);
+                Assert.IsTrue(LabelShowing(window, "SSL 模式"));
+                Assert.IsFalse(LabelShowing(window, "默认数据库"));            }
+            finally
+            {
+                window.Close();
+            }
+        }
+    });
 
     private static void AssertIndicatorAligned(Border indicator, Button tab)
     {

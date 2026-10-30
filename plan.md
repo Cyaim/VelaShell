@@ -3218,3 +3218,41 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 - MCP 扳手移至模型入口紧邻右侧，保留独立工具设置窗口；审批与用量仍处于输入框外的固定单行。模型、工具、模式及发送/停止按钮统一与附件「＋」同高（22px），调整思考强度不会持续高亮模型入口。同步中英用户手册及开发规格。
 
 **验证**：Windows Debug 下 `--no-restore -warnaserror` 分批定向回归 49/49、9/9、3/3 通过，均 0 失败、0 跳过，覆盖两套 OpenAI 协议的 xhigh/max 实际 HTTP 请求及 store:false、Anthropic 预算、配置恢复与设置保存/探活、临时覆盖、五语言、300px 下三种模式及忙态同高布局、800px/300px 扳手紧邻模型入口、工具窗口激活和审批显隐。开发文档 14 个相对链接有效。未进行实机 GUI 或跨平台验收。
+
+## 292. 2026-10-30 连接对话框：工作台变体与「先选类型 → 下一步」步骤
+
+**起因**：数据库插件（`velashell.sql`）把 MySQL / PostgreSQL / SQL Server / Oracle / SQLite 声明成同一个工作台的五个变体（`WorkspaceDescriptor.VariantKey` / `Variants`），但宿主一直没有读变体：切到 PostgreSQL 时端口仍是 3306，SQLite 照样要填端口和账号；方言下拉作为插件字段只能排在主机 / 端口 / 凭据之后，落在表单最底下。参照常见数据库客户端的连接类型网格，改成先选类型、再填表单。
+
+**变体读取**：
+
+- `PluginConnectionForm` 带上 `VariantKey` / `Variants`，`ForVariant` 按变体覆盖默认端口、主机 / 用户名 / 密码标签与能力位（`Features` 整体替换，照 SDK 语义）。端口只在当前值是某个变体或页签的默认值时跟随，按「算目标」处理，不先改写再还原；手填的端口不动；切到另一个插件页签时不沿用上一个页签的变体端口；编辑已存配置装载时不跟随。
+- 新增 `WorkspaceVariants.EffectiveFeatures` / `AllowsAnonymous`：配置里缺变体键时回落到字段默认值，与 launcher 的取值链一致。`MainWindowViewModel` 的匿名判定与隧道判定两处改走它，`NoCredentials` 视作匿名。
+
+**类型选择步骤**：
+
+- 出卡片的条件由宿主判定：`VariantKey` 指向的字段是 Choice、不隐藏、不可手输、至少两个候选。只在新建且类型尚未确认时进入卡片阶段；Redis / S3 / Telnet 等没有变体的连接类型行为不变。
+- 卡片阶段：分页条与表单收起，右侧按 Choices 顺序排磁贴（名字取 Choice 的 Label，图标暂用工作台图标），预选字段当前值。单击选中；双击或在卡片上按 Enter 选中并进入下一步；Space 只选中。页脚为 [取消][下一步]，取消即关闭对话框。
+- 表单阶段：顶部一行「类型 X」，变体下拉那一行不再显示；新建时页脚多一个 [上一步]，编辑时表头带「更换」。上一步 / 更换不清除任何已填值；只有新建且类型尚未确认（例如从别的协议切回来）时，下一步才强制按变体刷新一次端口。
+- 磁贴规格写进 `DESIGN.md` §5.2「Type tile」；5 个新文案键五份 resx 齐全；`manual.md` / `manual.en.md` §4.1 同步。
+
+**插件字段分页按页键**：内部模型 `PluginFormPage` 与字段的 `PageKey` 取代「`IsAdvanced` 二分」，页签条可以在「常规」与「高级」之间插入插件自定义页：页键优先于 `IsAdvanced`；未知页键回落默认位置；一页字段全不可见时页签收起，停在该页会落回「常规」；自定义页不做徽标、改动圆点与自动展开；没有自定义页时整组隐藏。本节两个 `From()` 都不填页，现有表单行为不变。数据来源是 velashell-plugin-sdk 的新契约 `WorkspaceDescriptor.Pages` / `ProtocolSettingField.Page` / `WorkspaceVariant.Icon`（可用版本待发版），SDK 发版后另开 PR 接上。
+
+**验证**：Windows Debug 下 `dotnet build VelaShell.slnx -c Debug --no-incremental --nologo -warnaserror` 0 警告、0 错误；`dotnet test tests/VelaShell.Tests -c Debug --no-build --nologo` 3229 通过 / 0 失败 / 19 跳过（改动前 3181 / 0 / 19）。新增 `ConnectionProfileTypePickerTests`、`ConnectionProfilePluginPagesTests`、`WorkspaceVariantCredentialTests`、`WorkspaceVariantsTests`，以及 `ConnectionProfileViewUiTests` 中的 headless 用例。端口跟随、装载不跟随、匿名判定、强制刷新条件、取消、卡片上 Enter 等关键判定都做过变异，均能使对应用例失败。
+
+**边界**：只在 headless 下渲染与截图，未在真实应用里操作过；未运行 Linux / macOS 与完整解决方案测试。五张卡片暂时共用工作台图标；「数据库 / SSL」等插件自定义页要等 SDK 发版后接入。
+
+## 293. 2026-10-30 连接对话框：SDK 抬到 2.1.5，接上插件自定义分页与变体图标
+
+**起因**：§292 的分页机制与类型卡片都已就位，但两个 `From()` 不填分页、卡片共用工作台图标，因为 velashell-plugin-sdk 的对应契约当时还没发版。SDK 2.1.5 已发布到 nuget.org，带着这四个成员：`ProtocolSettingPage(Key, Label)`、`ProtocolSettingField.Page`、`WorkspaceDescriptor.Pages`、`WorkspaceVariant.Icon`。
+
+**接上了什么**：
+
+- `src/Directory.Packages.props` 与 `tests/Directory.Packages.props` 的 `VelaShell.PluginSdk`（测试侧连同 `VelaShell.PluginSdk.Testing`）从 2.1.4 抬到 2.1.5。`plugins/VelaShell.Plugin.Ai` 用不到这四个成员，`minSdkVersion` 与包版本不动。
+- `PluginConnectionForm.From(WorkspaceDescriptor)` 把 `WorkspaceDescriptor.Pages` 映射成内部的 `PluginFormPage` 表（顺序不变），把各字段的 `Page` 收成「字段键 → 页键」字典；没声明分页时两者都记为 null，与没有自定义页同一个值。页键在不在分页表里、是不是宿主自己的 general / advanced，仍只在 §286 的 `PageKeyFor` / 建页签处判（未知页键按没填处理）；字段键重复只认第一次，不抛异常。`From(ProtocolDescriptor)` 不变：`ProtocolDescriptor` 没有分页列表，文件协议字段上的 `Page` 被忽略，照旧按 `IsAdvanced` 落位。
+- 类型卡片的图标改为：同 `Value` 变体的 `WorkspaceVariant.Icon` → 工作台描述符的图标 → 界面画通用插件图标。
+- 代码注释里「第一期 / 等 SDK」的说法按现状改写；`PluginFormOverride` 测试接缝保留，用于未知页键、宿主键、重复键这类边界情况。
+- `manual.md` / `manual.en.md` §4.1 补一句：插件可以在「常规」与「高级」之间加自己的页签，类型卡片显示插件给各类型配的图标。
+
+**验证**：Windows Debug 下 `dotnet build VelaShell.slnx -c Debug --no-incremental --nologo -warnaserror` 0 警告、0 错误；`dotnet test tests/VelaShell.Tests -c Debug --no-build --nologo` 按 `ConnectionProfilePluginPagesTests`、`ConnectionProfileTypePickerTests`、`ConnectionProfileViewUiTests`、`ConnectionProfileViewModelTests`、`WorkspaceVariantCredentialTests`、`WorkspaceVariantsTests` 与 `LocalizedKeyUsageTests`、`UnusedLocalizedKeyTests`、`HeadlessDispatchUsageTests` 过滤，145 通过 / 0 失败 / 0 跳过。新增两条：`From_WorkspaceDescriptor_MapsPagesAndFieldPages`（`From()` 的映射、文件协议忽略 `Page`、不经测试接缝的真实装载出两个自定义页签、页键优先于 `IsAdvanced`）与 `TypeCards_UseTheVariantIcon_FallingBackToTheDescriptorIcon`。两处变异 —— `From(WorkspaceDescriptor)` 不映射 `Pages`、卡片不取变体图标 —— 分别使这两条用例失败。
+
+**边界**：只在 headless 下验证，未在真实应用里操作过；未运行 Linux / macOS 与完整解决方案测试。眼下还没有插件声明 `Pages` 或变体图标，现有插件的对话框外观不变；数据库插件声明「数据库」「SSL」两页与各方言图标后，用户才会看到。
