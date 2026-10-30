@@ -20,6 +20,7 @@
   <StreamGeometry x:Key="Icon.pin">M12 17v5 M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1Z</StreamGeometry>
   <StreamGeometry x:Key="Icon.star">M12 3l2.78 5.63 6.22.91-4.5 4.38 1.06 6.2L12 17.2l-5.56 2.92 1.06-6.2L3 9.54l6.22-.91Z</StreamGeometry>
   <StreamGeometry x:Key="Icon.zap">M13 2 3 14h9l-1 8 10-12h-9l1-8Z</StreamGeometry>
+  <StreamGeometry x:Key="Icon.sparkles">M9.94 14.32a1 1 0 0 0-.66-.66l-4.24-1.32a.5.5 0 0 1 0-.96l4.24-1.32a1 1 0 0 0 .66-.66l1.32-4.24a.5.5 0 0 1 .96 0l1.32 4.24a1 1 0 0 0 .66.66l4.24 1.32a.5.5 0 0 1 0 .96l-4.24 1.32a1 1 0 0 0-.66.66l-1.32 4.24a.5.5 0 0 1-.96 0Z M20 3v4 M22 5h-4 M4 17v2 M5 18H3</StreamGeometry>
   <StreamGeometry x:Key="Icon.link-2">M9 17H7A5 5 0 0 1 7 7h2 M15 7h2a5 5 0 1 1 0 10h-2 M8 12h8</StreamGeometry>
   <StreamGeometry x:Key="Icon.send">M22 2 15 22l-4-9-9-4Z M22 2 11 13</StreamGeometry>
   <StreamGeometry x:Key="Icon.plus">M5 12h14 M12 5v14</StreamGeometry>

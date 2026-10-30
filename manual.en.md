@@ -119,7 +119,7 @@ The main window contains a title bar, Explorer, a docking document area, and a b
 | Manage quick commands | Settings → Snippets; sidebar Quick Commands panel | Organize, edit, and send snippets |
 | View notifications | Sidebar bell → Message Center | Updates, news, and security/runtime warnings |
 | Install extensions | Plugin Manager | Install a trusted `.vpx` or obtain it through the marketplace entry |
-| Use AI | Search AI in the Command Palette | AI is bundled; model access requires configuration |
+| Use AI | Sparkles button at the top right of the main window; or search AI in the Command Palette | AI is bundled; model access requires configuration |
 | Connect IM or an external Agent | Command Palette → AI collaboration integration | The opposite direction from adding MCP tool servers to the AI |
 
 **Usage:** If an icon is unavailable, first check focus and session type. An FTP tab does not provide SSH process management; a disconnected tab does not supply live resource metrics. The Command Palette executes application actions, not arbitrary remote shell input.
@@ -880,7 +880,7 @@ Type conflicts, case-only name differences, and illegal local filenames are not 
 
 **Disclosure/write warning:** Questions, terminal context, referenced remote files, and tool results can leave your computer for a provider or relay; IM also traverses the chat platform. Web search (`web_search` / `web_fetch`) is **off by default**. Once you enable it in the AI global settings, the search words the model writes (often error messages, host names, internal service names) are sent to the SearXNG instance in that setting — by default a public instance run by VelaShell, `searxng.easilynet.top`; you can point it at your own instance or clear the address. `web_fetch` downloads the pages the model names directly from your computer. Remove keys, passwords, personal data, and business secrets, and choose providers according to organizational policy. Model responses/arguments may be wrong. Review approvals seriously; start production investigation in read-only/Plan mode.
 
-**Entry point and direction:** Search AI in the Command Palette for docked chat, a separate window, terminal explanation, or collaboration integration. Model/tool configuration is in chat; collaboration integration opens independently.
+**Entry point and direction:** Click the Sparkles icon button at the top right of the main window to open the AI chat dock panel, or switch back to it if already open. Search AI in the Command Palette for docked chat, a separate window, terminal explanation, or collaboration integration. Model/tool configuration is in chat; collaboration integration opens independently.
 
 - **AI provider:** VelaShell sends messages to a model provider.
 - **MCP client tools:** The AI plugin calls external MCP servers you configure.

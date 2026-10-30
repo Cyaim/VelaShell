@@ -2293,6 +2293,9 @@
   <data name="Main_TerminalExported" xml:space="preserve">
     <value>終端機輸出已匯出:{0}</value>
   </data>
+  <data name="Menu_AiAssistantTip" xml:space="preserve">
+    <value>AI 助手</value>
+  </data>
   <data name="Menu_CommandPaletteTip" xml:space="preserve">
     <value>命令面板 (Ctrl+P)</value>
   </data>

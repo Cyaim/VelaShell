@@ -293,7 +293,8 @@ public sealed class AiPlugin : IVelaPlugin
         IPluginContext context = _context!;
         if (_panel is { IsOpen: true } && _view is not null)
         {
-            return _view; // 已开着(面板是活控件)
+            await _panel.ActivateAsync();
+            return _view;
         }
         ChatPanelView? view = null;
         (double width, double height) = WindowFit.Fit(820, 660);
