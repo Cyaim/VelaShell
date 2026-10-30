@@ -94,7 +94,7 @@ public sealed partial class ChatPanelViewUiTests
             {
                 // 顶栏三件套 + 输入区 + 新增的历史区都应在可视树里
                 Assert.IsNotNull(Find<ToggleButton>(panel, "HistoryToggle"));
-                // 设置与"配置工具"都是独立窗口了,顶栏上是两枚按钮而不是视图开关
+                // 设置与"配置工具"按钮分别位于顶栏和输入框下方,均打开独立窗口
                 Assert.IsNotNull(Find<Button>(panel, "SettingsButton"));
                 Assert.IsNotNull(Find<Button>(panel, "ToolsButton"));
                 Assert.IsNotNull(Find<DockPanel>(panel, "HistoryHost"));
@@ -1161,6 +1161,30 @@ public sealed partial class ChatPanelViewUiTests
                     "审批选择器显隐不该改变这一行的高度,否则输入区会跳一下");
                 Assert.AreEqual(CentreY(approval, bar), CentreY(usage, bar), 0.75,
                     "审批选择器与用量文字要在同一条中心线上");
+
+                Button tools = Find<Button>(panel, "ToolsButton");
+                Button send = Find<Button>(panel, "SendButton");
+                Assert.IsTrue(bar.GetVisualDescendants().Contains(tools), "工具配置应在输入框下方的状态行");
+                Assert.IsNotNull(tools.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>().Single().Data,
+                    "工具图标在没有宿主图标资源时也应可用");
+                usage.Text = new string('8', 100);
+                Find<Border>(panel, "UsageMeterTrack").IsVisible = true;
+                foreach (double width in new[] { 800d, 300d })
+                {
+                    window.Width = width;
+                    window.Measure(window.ClientSize);
+                    window.Arrange(new Rect(window.ClientSize));
+                    await PumpAsync(5);
+
+                    Assert.AreEqual(CentreY(approval, bar), CentreY(tools, bar), 0.75,
+                        "工具按钮与审批框应在同一条中心线上");
+                    Point toolsOrigin = tools.TranslatePoint(default, bar)!.Value;
+                    Assert.AreEqual(bar.Bounds.Width, toolsOrigin.X + tools.Bounds.Width, 0.75,
+                        $"窄面板和长用量文字也不能挤走靠右的工具按钮: approval={approval.Bounds.Width}, usage={usage.Bounds.Width}, tools={tools.Bounds.Width}");
+                    Assert.IsTrue(tools.TranslatePoint(default, panel)!.Value.Y >=
+                        send.TranslatePoint(default, panel)!.Value.Y + send.Bounds.Height,
+                        "工具配置应位于发送按钮下方");
+                }
             }
             finally
             {

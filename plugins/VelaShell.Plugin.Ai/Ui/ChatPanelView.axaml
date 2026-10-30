@@ -733,19 +733,11 @@
                   StrokeLineCap="Round" StrokeJoin="Round" />
           </Viewbox>
         </ToggleButton>
-        <!-- 四枚动作统一 26×30 图标钮:原来「新会话」带文字,面板一窄就把会话名挤没了;
+        <!-- 三枚动作统一 26×30 图标钮:原来「新会话」带文字,面板一窄就把会话名挤没了;
              文案走 ToolTip(见 ApplyLoc)。 -->
         <Button x:Name="NewChatButton" Theme="{DynamicResource VelaOutlineButtonTheme}" Height="26" Width="30" Padding="0">
           <Viewbox Width="13" Height="13">
             <Path Width="24" Height="24" Data="{DynamicResource Icon.plus}"
-                  Stroke="{DynamicResource VelaTextSecondary}" StrokeThickness="2"
-                  StrokeLineCap="Round" StrokeJoin="Round" />
-          </Viewbox>
-        </Button>
-        <!-- 配置工具:勾选哪些内置/MCP 工具暴露给模型(独立窗口) -->
-        <Button x:Name="ToolsButton" Theme="{DynamicResource VelaOutlineButtonTheme}" Height="26" Width="30" Padding="0">
-          <Viewbox Width="13" Height="13">
-            <Path Width="24" Height="24" Data="{DynamicResource Icon.sliders-horizontal}"
                   Stroke="{DynamicResource VelaTextSecondary}" StrokeThickness="2"
                   StrokeLineCap="Round" StrokeJoin="Round" />
           </Viewbox>
@@ -762,30 +754,32 @@
     </Grid>
 
     <!-- 最下沿的一条细行(同 Copilot 输入框下方那排):左边是 Agent 的审批模式,
-         右边是 token 用量。放在容器外而不是工具条里,是为了不跟模型下拉抢那点宽度。 -->
-    <Grid x:Name="InputStatusBar" DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" Margin="2,5,2,0">
+         右边是 token 用量和工具配置。放在容器外而不是工具条里,是为了不跟模型下拉抢那点宽度。 -->
+    <Grid x:Name="InputStatusBar" DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto,Auto" Margin="2,5,2,0">
       <!-- 审批方式:默认审批 / 只读放行 / 绕过审批(只在有工具的模式下才有意义)。
            三档的语义色由 SyncModeUi 就地写(问=中性 / 只读自动=warn / 全部自动=error) ——
            这是个安全开关,当前挡位该在余光里就能读出来。 -->
-      <ComboBox x:Name="ApprovalCombo" IsVisible="False" MinWidth="96">
+      <ComboBox x:Name="ApprovalCombo" IsVisible="False" MinWidth="96" MaxWidth="160"
+                HorizontalAlignment="Left" HorizontalContentAlignment="Stretch">
         <ComboBox.ItemTemplate>
           <DataTemplate x:DataType="ui:ApprovalNavItem">
             <!-- 盾牌形状本身就分得开三档(打勾 / 感叹号 / 划掉),不必只靠颜色 ——
                  用户把强调色调成偏红时,"全部自动"的 error 色会和强调色撞在一起。
                  颜色写在数据项上而不是控件上:下拉里每一行也就各自带色,选中哪档一目了然。 -->
-            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="5" VerticalAlignment="Center">
               <Viewbox Width="10" Height="10" VerticalAlignment="Center">
                 <Path Width="24" Height="24" Data="{Binding Icon}" Stroke="{Binding Tone}"
                       StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" />
               </Viewbox>
-              <TextBlock Text="{Binding Text}" Foreground="{Binding Tone}" VerticalAlignment="Center" />
-            </StackPanel>
+              <TextBlock Grid.Column="1" Text="{Binding Text}" Foreground="{Binding Tone}"
+                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            </Grid>
           </DataTemplate>
         </ComboBox.ItemTemplate>
       </ComboBox>
       <!-- 命中缓存时这段会长一截(多一个"缓存 80%"),留够宽度;再长由 TextTrimming 收,
            完整明细本来就在悬停提示里。 -->
-      <TextBlock x:Name="UsageText" Grid.Column="1" Classes="meta" MaxWidth="300" Margin="8,0,0,0" />
+      <TextBlock x:Name="UsageText" Grid.Column="1" Classes="meta" MaxWidth="300" Margin="8,0,0,0" HorizontalAlignment="Right" />
       <!-- 上下文占用条:占比是要被瞥见的东西,不该只活在悬停提示里。
            知道窗口大小才画得出来(MaxInputTokens=0 就整条隐掉,见 UpdateUsageText)。 -->
       <Border x:Name="UsageMeterTrack" Grid.Column="2" Width="56" Height="4" CornerRadius="2"
@@ -794,6 +788,15 @@
         <Border x:Name="UsageMeterFill" Width="0" CornerRadius="2"
                 HorizontalAlignment="Left" Background="{DynamicResource VelaAccent}" />
       </Border>
+      <Button x:Name="ToolsButton" Grid.Column="3" Theme="{StaticResource AiGhostIconButtonTheme}"
+              Width="24" Height="20" MinWidth="0" MinHeight="0" Margin="8,0,0,0"
+              HorizontalAlignment="Right" VerticalAlignment="Center">
+        <Viewbox Width="13" Height="13">
+          <Path Width="24" Height="24" Data="{StaticResource AiIcon.wrench}"
+                Stroke="{DynamicResource VelaTextSecondary}" StrokeThickness="2"
+                StrokeLineCap="Round" StrokeJoin="Round" />
+        </Viewbox>
+      </Button>
     </Grid>
 
     <!-- 输入容器 = 编辑区 + 其下的工具条(模型选择 / Agent / 发送),状态行悬于其上。
