@@ -92,14 +92,20 @@ public sealed class PluginProtocolFieldViewModel : ReactiveObject
     /// 重新向插件索取候选项(仅 <see cref="ProtocolSettingKind.DynamicChoice" /> 形态用到)。
     /// 由 <see cref="ConnectionProfileViewModel" /> 传入 —— 字段视图模型不该认识插件注册表。
     /// </param>
+    /// <param name="pageKey">
+    /// 这一行画在哪一页(由表单的 <c>PageKeyFor</c> 算好传入);null 按 <see cref="IsAdvanced" />
+    /// 落在「高级」或「常规」 —— 与没有自定义分页时一样。
+    /// </param>
     public PluginProtocolFieldViewModel(
         ProtocolSettingField field,
         string? value,
         IReadOnlyList<PluginSessionChoice>? sshSessions = null,
-        Func<PluginProtocolFieldViewModel, Task>? reload = null)
+        Func<PluginProtocolFieldViewModel, Task>? reload = null,
+        string? pageKey = null)
     {
         ArgumentNullException.ThrowIfNull(field);
         Field = field;
+        PageKey = pageKey ?? (field.IsAdvanced ? PluginFormPage.AdvancedKey : PluginFormPage.GeneralKey);
         SshSessions = sshSessions ?? [];
         _text = value ?? field.DefaultValue ?? string.Empty;
         Choices = [.. field.Choices.Select(PluginChoiceItem.From)];
@@ -169,8 +175,17 @@ public sealed class PluginProtocolFieldViewModel : ReactiveObject
     /// <summary>是否为机密字段(随口令一起加密落盘)。</summary>
     public bool IsSecret => Field.IsSecret;
 
-    /// <summary>是否属于「高级」页(不在「常规」页上显示)。</summary>
+    /// <summary>
+    /// 插件声明的 <c>IsAdvanced</c>。它只决定**没有页键**的字段去「高级」还是「常规」;
+    /// 这一行实际画在哪一页看 <see cref="PageKey" />。
+    /// </summary>
     public bool IsAdvanced => Field.IsAdvanced;
+
+    /// <summary>
+    /// 这一行画在哪一页的页键:「常规」<c>general</c>、「高级」<c>advanced</c>,或插件声明的某个自定义页。
+    /// 页键优先于 <see cref="IsAdvanced" />。
+    /// </summary>
+    public string PageKey { get; }
 
     /// <summary>
     /// 这一行当前显不显示。由 <see cref="ConnectionProfileViewModel" /> 按当前分页与

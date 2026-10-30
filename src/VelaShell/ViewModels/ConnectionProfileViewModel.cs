@@ -448,6 +448,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         BrowseKeyFileCommand = ReactiveCommand.Create(() => { });
         BrowseCertificateFileCommand = ReactiveCommand.Create(() => { });
         SelectSectionCommand = ReactiveCommand.Create<ConnectionProfileSection>(section => SelectedSection = section);
+        SelectPluginPageCommand = ReactiveCommand.Create<string>(SelectPluginPage);
         SelectAuthMethodCommand = ReactiveCommand.Create<AuthMethod>(method => AuthMethod = method);
         NewSharedCredentialCommand = ReactiveCommand.CreateFromTask(NewSharedCredentialAsync);
         OpenPluginManagerCommand = ReactiveCommand.Create(() => OpenPluginManager?.Invoke());
@@ -1333,7 +1334,9 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             this.RaisePropertyChanged(nameof(IsSshOptionsSection));
             this.RaisePropertyChanged(nameof(IsForwardingSection));
             this.RaisePropertyChanged(nameof(IsAdvancedSection));
-            // 插件字段按分页分两拨:常用的在「常规」,标了 IsAdvanced 的在「高级」。
+            this.RaisePropertyChanged(nameof(IsPluginPageSection));
+            SyncPluginPageSelection();
+            // 插件字段按页键分页:「常规」、插件声明的自定义页、「高级」(见 ConnectionProfileViewModel.PluginPages.cs)。
             ApplyPluginFieldVisibility();
         }
     }
@@ -1382,12 +1385,15 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     /// <summary>是否要显示 <see cref="AdvancedBadge" />。</summary>
     public bool HasAdvancedBadge => AdvancedPluginFieldCount > 0;
 
-    /// <summary>当前适用的插件高级字段数(显示条件不成立的不算:点进去也看不到它)。</summary>
-    private int AdvancedPluginFieldCount => PluginFields.Count(f => f.IsAdvanced && IsFormRow(f));
+    /// <summary>
+    /// 「高级」页上要画的插件字段数(显示条件不成立的不算:点进去也看不到它)。
+    /// 按页键数:进了自定义页的字段哪怕标着 IsAdvanced 也不算(页键优先)。
+    /// </summary>
+    private int AdvancedPluginFieldCount => PluginFields.Count(f => IsFormRowOn(f, PluginFormPage.AdvancedKey));
 
     /// <summary>「常规」页上有没有插件字段要画(没有时连带那一节的标题一起收起)。</summary>
     public bool ShowPluginGeneralFields =>
-        IsPluginSelected && (IsPluginLoading || PluginFields.Any(f => !f.IsAdvanced && IsFormRow(f)));
+        IsPluginSelected && (IsPluginLoading || PluginFields.Any(f => IsFormRowOn(f, PluginFormPage.GeneralKey)));
 
     /// <summary>「常规」页上插件字段那一节的标题,如「S3 设置」。</summary>
     public string PluginSectionTitle =>
@@ -1419,7 +1425,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     public bool IsAdvancedSectionModified =>
         IsFtpSelected
             ? !string.IsNullOrWhiteSpace(_ftpInitialRemotePath) || _ftpServerUtcOffsetMinutes is not null
-            : PluginFields.Any(f => f.IsAdvanced
+            // 按页键认「高级」页上的字段:进了自定义页的不给「高级」点圆点(自定义页不做圆点)。
+            : PluginFields.Any(f => string.Equals(f.PageKey, PluginFormPage.AdvancedKey, StringComparison.Ordinal)
                                     && !string.Equals(f.Text, f.Field.DefaultValue ?? string.Empty, StringComparison.Ordinal));
 
     private bool IsSectionAvailable(ConnectionProfileSection section) => section switch
@@ -1428,6 +1435,7 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
         ConnectionProfileSection.SshOptions => ShowSshOptionsSection,
         ConnectionProfileSection.Forwarding => ShowForwardingSection,
         ConnectionProfileSection.Advanced => ShowAdvancedSection,
+        ConnectionProfileSection.PluginPage => IsPluginPageAvailable,
         _ => true
     };
 
@@ -2701,11 +2709,11 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
 
     /// <summary>
     /// 按当前分页**与字段自己声明的显示条件**下发插件字段的行可见性,
-    /// 并刷新「高级」页签上的字段数与圆点。
+    /// 并刷新各自定义页签在不在、「高级」页签上的字段数与圆点。
     /// <para>
-    /// 插件字段在两页上各画一份 —— 「常规」画常用的,「高级」画标了 <c>IsAdvanced</c> 的 ——
-    /// 两份绑的是同一批行。两页同一时刻只显示一页,所以每一行只要一个可见性:
-    /// 属于当前这一页,且显示条件成立。
+    /// 插件字段在「常规」、自定义页、「高级」上各画一份,绑的是同一批行;每一行归哪一页看它的页键
+    /// (<see cref="PluginProtocolFieldViewModel.PageKey" />)。同一时刻只显示一页,所以每一行只要一个可见性:
+    /// 属于当前这一页,且是表单行(<see cref="IsFormRowOn" />)。
     /// </para>
     /// <para>
     /// 藏的是**行**而不是整个列表:行本身早就渲染好了,只是 IsVisible 变化 ——
@@ -2718,12 +2726,14 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
     /// </summary>
     private void ApplyPluginFieldVisibility()
     {
-        bool advancedPage = SelectedSection == ConnectionProfileSection.Advanced;
+        string page = CurrentPluginPageKey;
         foreach (PluginProtocolFieldViewModel field in PluginFields)
         {
             // 出卡片时变体字段那一行永不显示:表头「类型:X」替代它(决策 D11)。
-            field.IsRowVisible = IsFormRow(field) && field.IsAdvanced == advancedPage;
+            field.IsRowVisible = IsFormRowOn(field, page);
         }
+        // 一页的字段全被显示条件藏掉时,它的页签收起;停在那一页的话,下面的 RefreshSectionAvailability 落回「常规」。
+        RefreshPluginPageTabs();
         this.RaisePropertyChanged(nameof(AdvancedBadge));
         this.RaisePropertyChanged(nameof(HasAdvancedBadge));
         this.RaisePropertyChanged(nameof(IsAdvancedSectionModified));
@@ -2880,6 +2890,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             ClearPluginFields();
             _pluginBaseForm = null;
             _pluginForm = null;
+            // 上一个协议的自定义页签同理:等激活的这段时间里不能还挂在页签条上。
+            RebuildPluginPages(null);
             _pluginStored = null;
             _pluginStoredSecrets = null;
             // T5:上一个页签的卡片与"类型已确认"不能带到这个页签上。
@@ -2930,12 +2942,19 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                 return;
             }
             applied = true;
+            // 测试接缝(见 PluginFormOverride):第一期 SDK 给不出分页,用例经它喂合成表单。
+            if (form is not null && PluginFormOverride is { } overrideForm)
+            {
+                form = overrideForm(form);
+            }
             _pluginBaseForm = form;
             _pluginForm = form;
             _loadedProtocolId = protocolId;
             // 插件被禁用/装载失败:表单是空的,而 AllowsAnonymous 随之为 false,
             // 匿名配置的保存/连接会同时灰死。给一条能看懂的话,别让用户对着灰按钮猜。
             PluginUnavailable = form is null;
+            // 自定义页签先于字段建好:字段逐行进集合时的那几次下发要能算出各页签在不在。
+            RebuildPluginPages(form);
             ClearPluginFields();
             foreach (ProtocolSettingField field in _pluginForm?.Fields ?? [])
             {
@@ -2950,7 +2969,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
                     : null;
                 PluginFields.Add(new(field, stored,
                     field.Kind == ProtocolSettingKind.SshSession ? EnsureSshSessionChoices() : null,
-                    field.Kind == ProtocolSettingKind.DynamicChoice ? ReloadFieldChoicesAsync : null));
+                    field.Kind == ProtocolSettingKind.DynamicChoice ? ReloadFieldChoicesAsync : null,
+                    pageKey: _pluginForm?.PageKeyFor(field)));
             }
             // 编辑既有配置时高级字段里有非默认值,「高级」页签上会点一个圆点
             // (IsAdvancedSectionModified,由下面这次下发一并刷新):用户填过的东西不能藏得看不出来,
@@ -3208,6 +3228,8 @@ public partial class ConnectionProfileViewModel : ReactiveObject, IDisposable
             _pluginBaseForm = null;
             _pluginForm = null;
             ClearPluginFields();
+            // 内建协议没有自定义页:页签条上不能留着上一个插件的「数据库」「SSL」。
+            RebuildPluginPages(null);
             PluginUnavailable = false;
             RaisePluginLabelsChanged();
             // T5:内建协议没有卡片;再点回来时由装载完成的 T1 重新定步骤。

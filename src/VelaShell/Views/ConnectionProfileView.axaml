@@ -241,7 +241,7 @@
 
     <!-- 插件协议的一行设置。字段声明来自插件的 ProtocolDescriptor,宿主按 Kind 渲染 ——
          插件因此不需要写一行界面代码,而连接对话框的布局、主题与校验仍归宿主统一负责。
-         「常规」页与「高级」页各用它画一份,绑的是同一批行(可见性由 VM 按分页下发)。 -->
+         「常规」页、插件自定义页与「高级」页各用它画一份,绑的是同一批行(可见性由 VM 按页键下发)。 -->
     <DataTemplate x:Key="PluginFieldRow" x:DataType="vm:PluginProtocolFieldViewModel">
       <StackPanel Margin="0,0,0,12" Spacing="4" IsVisible="{Binding IsRowVisible}">
         <TextBlock Classes="field-label" Margin="0" Text="{Binding Label}" IsVisible="{Binding !IsToggle}" />
@@ -715,6 +715,35 @@
                     <Ellipse Classes="modified-dot" IsVisible="{Binding IsForwardingSectionModified}" />
                   </StackPanel>
                 </Button>
+                <!-- 插件声明的自定义页(「数据库」「SSL」……),夹在「常规」与「高级」之间,按声明顺序。
+                     与「常规」同一个页签主题;不带「高级」的数量徽标与圆点。一页的字段全被显示条件藏掉时页签收起
+                     (容器跟着收,否则它还占一格间距);一个都没有时整组收起,「高级」不挪位置。 -->
+                <ItemsControl x:Name="PluginPageTabs"
+                              ItemsSource="{Binding PluginPages}"
+                              IsVisible="{Binding ShowPluginPageTabs}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Orientation="Horizontal" Spacing="2" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemContainerTheme>
+                    <ControlTheme TargetType="ContentPresenter" x:DataType="vm:PluginPageTabViewModel">
+                      <Setter Property="IsVisible" Value="{Binding HasVisibleFields}" />
+                    </ControlTheme>
+                  </ItemsControl.ItemContainerTheme>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:PluginPageTabViewModel">
+                      <Button Theme="{StaticResource SectionTabTheme}" Classes="section-tab plugin-page-tab"
+                              Tag="{Binding Key}"
+                              Classes.selected="{Binding IsSelected}"
+                              IsVisible="{Binding HasVisibleFields}"
+                              Command="{Binding $parent[ItemsControl].((vm:ConnectionProfileViewModel)DataContext).SelectPluginPageCommand}"
+                              CommandParameter="{Binding Key}">
+                        <TextBlock Text="{Binding Label}" />
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
                 <Button x:Name="AdvancedTab" Theme="{StaticResource SectionTabTheme}" Classes="section-tab"
                         Classes.selected="{Binding IsAdvancedSection}"
                         IsVisible="{Binding ShowAdvancedSection}"
@@ -1147,7 +1176,7 @@
                   </StackPanel>
                 </StackPanel>
 
-                <!-- 插件协议的常用字段(标了 IsAdvanced 的在「高级」页) -->
+                <!-- 插件协议的常用字段(页键为「常规」的;自定义页与「高级」页的在各自页上) -->
                 <StackPanel Spacing="12" IsVisible="{Binding ShowPluginGeneralFields}">
                   <Grid ColumnDefinitions="Auto,*">
                     <TextBlock Classes="section-title" Text="{Binding PluginSectionTitle}" />
@@ -1512,6 +1541,12 @@
                      全铺在「常规」页上就长到屏幕外了。 -->
                 <ItemsControl IsVisible="{Binding IsPluginSelected}"
                               ItemsSource="{Binding PluginFields}" ItemTemplate="{StaticResource PluginFieldRow}" />
+              </StackPanel>
+
+              <!-- ============================== 插件自定义页(数据库 / SSL …) ==============================
+                   第三份同一批行:哪一行画在这里看它的页键(VM 按当前选中的自定义页下发 IsRowVisible)。 -->
+              <StackPanel x:Name="PluginPageSection" Grid.Row="1" Spacing="12" IsVisible="{Binding IsPluginPageSection}">
+                <ItemsControl ItemsSource="{Binding PluginFields}" ItemTemplate="{StaticResource PluginFieldRow}" />
               </StackPanel>
             </Grid>
           </ScrollViewer>

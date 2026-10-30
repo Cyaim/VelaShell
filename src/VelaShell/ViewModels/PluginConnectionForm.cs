@@ -55,6 +55,11 @@ namespace VelaShell.ViewModels;
 /// 连接类型自报的图标(仅工作台形态有,取 <see cref="WorkspaceDescriptor.Icon" />);
 /// 「选类型」卡片第一期用它,null 时界面画通用插件图标。
 /// </param>
+/// <param name="Pages">
+/// 介于「常规」与「高级」之间的自定义分页(「数据库」「SSL」……),按声明顺序成页签;null / 空表示没有。
+/// 第一期两个 <c>From()</c> 都不填 —— SDK 还没有对应的契约,表单与今天一模一样。
+/// </param>
+/// <param name="FieldPages">字段键 → 所属分页的键;见 <see cref="PageKeyFor" />。</param>
 internal sealed record PluginConnectionForm(
     PluginConnectionKind Kind,
     string? HostLabel,
@@ -72,10 +77,44 @@ internal sealed record PluginConnectionForm(
     IProtocolChoiceSource? ChoiceSource = null,
     string? VariantKey = null,
     IReadOnlyList<WorkspaceVariant>? Variants = null,
-    PluginSdk.PluginIcon? Icon = null)
+    PluginSdk.PluginIcon? Icon = null,
+    IReadOnlyList<PluginFormPage>? Pages = null,
+    IReadOnlyDictionary<string, string>? FieldPages = null)
 {
     /// <summary>主机栏是否渲染成下拉(静态或动态)。</summary>
     public bool HostIsChoice => HostKind is ProtocolSettingKind.Choice or ProtocolSettingKind.DynamicChoice;
+
+    /// <summary>
+    /// 字段画在哪一页:<see cref="FieldPages" /> 给了键、且这个键在 <see cref="Pages" /> 里,就是那一页;
+    /// 否则按 <see cref="ProtocolSettingField.IsAdvanced" /> 去「高级」或「常规」。
+    /// <para>
+    /// <b>页键优先于 IsAdvanced</b>:填了页键的字段进那一页,IsAdvanced 不再看 ——
+    /// 「高级」带着宿主专属的行为(数量徽标、改过值的圆点),自定义页不做这几样。
+    /// </para>
+    /// <para>
+    /// <b>不认识的键按没填处理</b>(不报错):与 <c>VisibleWhen</c> 引用不存在的键同一态度,
+    /// 字段落回默认位置,用户总还找得到它。
+    /// </para>
+    /// </summary>
+    /// <param name="field">字段声明。</param>
+    /// <returns>页键:<see cref="PluginFormPage.GeneralKey" />、<see cref="PluginFormPage.AdvancedKey" /> 或某个自定义页的键。</returns>
+    public string PageKeyFor(ProtocolSettingField field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        if (FieldPages is not null
+            && FieldPages.TryGetValue(field.Key, out string? key)
+            && Pages is { Count: > 0 } pages)
+        {
+            for (int i = 0; i < pages.Count; i++)
+            {
+                if (string.Equals(pages[i].Key, key, StringComparison.Ordinal))
+                {
+                    return key;
+                }
+            }
+        }
+        return field.IsAdvanced ? PluginFormPage.AdvancedKey : PluginFormPage.GeneralKey;
+    }
 
     /// <summary>
     /// 新建连接时要不要先出一屏「选类型」的卡片(见 <see cref="TypePickerField" />)。
@@ -243,4 +282,22 @@ internal sealed record PluginConnectionForm(
             VariantKey: descriptor.VariantKey,
             Variants: descriptor.Variants,
             Icon: descriptor.Icon);
+}
+
+/// <summary>
+/// 连接对话框里插件声明的一个自定义分页(「数据库」「SSL」……),介于「常规」与「高级」之间。
+/// <para>
+/// 用键而不是枚举:这些是领域页,宿主没法为任意插件预备一套封闭的文案;显隐与测试都按键比较,
+/// 文案换语言不影响。「常规」「高级」由宿主出文案,不在插件的分页表里 —— 两个常量只是它们在页键上的名字。
+/// </para>
+/// </summary>
+/// <param name="Key">页键:稳定标识,序数比较。</param>
+/// <param name="Label">页签文案(插件自行本地化)。</param>
+internal sealed record PluginFormPage(string Key, string Label)
+{
+    /// <summary>「常规」页的页键:没有页键、也没标 IsAdvanced 的字段在这里。</summary>
+    public const string GeneralKey = "general";
+
+    /// <summary>「高级」页的页键:没有页键、标了 IsAdvanced 的字段在这里。</summary>
+    public const string AdvancedKey = "advanced";
 }

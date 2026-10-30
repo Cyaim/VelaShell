@@ -179,15 +179,16 @@ public partial class ConnectionProfileView : Window
         {
             return;
         }
-        Button target = viewModel.SelectedSection switch
+        Button? target = viewModel.SelectedSection switch
         {
             ConnectionProfileSection.Terminal => TerminalTab,
             ConnectionProfileSection.SshOptions => SshOptionsTab,
             ConnectionProfileSection.Forwarding => ForwardingTab,
             ConnectionProfileSection.Advanced => AdvancedTab,
+            ConnectionProfileSection.PluginPage => PluginPageTab(viewModel.SelectedPluginPageKey),
             _ => GeneralTab
         };
-        if (!target.IsVisible || target.Bounds.Width <= 0)
+        if (target is null || !target.IsVisible || target.Bounds.Width <= 0)
         {
             return;
         }
@@ -217,6 +218,14 @@ public partial class ConnectionProfileView : Window
         }
     }
 
+    /// <summary>自定义页签里页键为 <paramref name="key" /> 的那一个(模板生成的,按 Tag 找);还没建出来时为 null。</summary>
+    private Button? PluginPageTab(string? key) =>
+        key is null
+            ? null
+            : PluginPageTabs.GetVisualDescendants()
+                .OfType<Button>()
+                .FirstOrDefault(button => button.Tag is string tag && string.Equals(tag, key, StringComparison.Ordinal));
+
     private void OnOpened(object? sender, EventArgs e) => FireAndForget.Run(async () =>
     {
         if (DataContext is not ConnectionProfileViewModel viewModel)
@@ -237,8 +246,10 @@ public partial class ConnectionProfileView : Window
         // 换协议也要盯:页签随之增减,选中那一页的按钮位置跟着挪(或者被收起、落回「常规」)。
         viewModel.PropertyChanged += (_, args) =>
         {
+            // 自定义页之间切换时 SelectedSection 不变(都是 PluginPage),只有页键变。
             if (args.PropertyName is nameof(ConnectionProfileViewModel.SelectedSection)
-                or nameof(ConnectionProfileViewModel.ConnectionType))
+                or nameof(ConnectionProfileViewModel.ConnectionType)
+                or nameof(ConnectionProfileViewModel.SelectedPluginPageKey))
             {
                 UpdateSectionTabIndicator();
             }
