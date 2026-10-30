@@ -24,6 +24,7 @@
   <StreamGeometry x:Key="AiIcon.minus">M5 12h14</StreamGeometry>
 
   <StreamGeometry x:Key="AiIcon.image-down">M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10l-3.1-3.1a2 2 0 0 0-2.814.014L6 21 M14 19l3 3v-5.5 M17 22l3-3 M11 9a2 2 0 1 1-4 0 2 2 0 0 1 4 0</StreamGeometry>
+  <StreamGeometry x:Key="AiIcon.copy">M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2Z M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2</StreamGeometry>
   <StreamGeometry x:Key="AiIcon.fullscreen">M3 7V5a2 2 0 0 1 2-2h2 M17 3h2a2 2 0 0 1 2 2v2 M21 17v2a2 2 0 0 1-2 2h-2 M7 21H5a2 2 0 0 1-2-2v-2 M8 8h8a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z</StreamGeometry>
 
   <!-- Independent circular image actions: only the surface fades, never the icon. -->

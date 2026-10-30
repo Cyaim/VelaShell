@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
@@ -149,6 +150,8 @@ public partial class ChatPanelView
                 try { Decode(); }
                 catch (Exception ex) { _owner._context.Log.Warn($"Decoding generated image failed: {ex.Message}"); }
             };
+            Button copy = ImageAction("ImageCopyAction", "AiIcon.copy", _owner._loc["CopyGeneratedImage"]);
+            copy.Click += async (_, _) => await CopyImageAsync(reference, copy);
             Button save = ImageAction("ImageSaveAction", "AiIcon.image-down", _owner._loc["SaveGeneratedImage"]);
             save.Click += async (_, _) => await SaveImageAsync(reference);
             Button full = ImageAction("ImageFullScreenAction", "AiIcon.fullscreen", _owner._loc["ViewFullImage"]);
@@ -160,7 +163,7 @@ public partial class ChatPanelView
                 Margin = new Thickness(8),
                 Orientation = Orientation.Horizontal,
                 Spacing = 6,
-                Children = { save, full }
+                Children = { copy, save, full }
             };
             body.Children.Add(preview);
             body.Children.Add(actions);
@@ -198,7 +201,7 @@ public partial class ChatPanelView
                 (availableWidth, availableHeight) = (1600, 1200);
             Size initialSize = ImagePreviewView.InitialWindowSize(bitmap.PixelSize,
                 new Size(availableWidth, availableHeight), scaling);
-            var view = new ImagePreviewView(bitmap, _owner._loc, scaling);
+            var view = new ImagePreviewView(bitmap, _owner._loc, scaling, source => CopyImageAsync(reference, source));
             IPluginPanel? panel = null;
             bool closed = false;
             void Cleanup()
@@ -224,6 +227,34 @@ public partial class ChatPanelView
                     panel = opened;
                     if (closed) _ = opened.CloseAsync();
                 }, Cleanup);
+        }
+
+        private async Task CopyImageAsync(ChatGeneratedImage reference, Control source)
+        {
+            try
+            {
+                if (TopLevel.GetTopLevel(source)?.Clipboard is not { } clipboard)
+                    throw new InvalidOperationException(_owner._loc["ImageClipboardUnavailable"]);
+                byte[] bytes = _owner._generatedImages.Load(reference).Data.ToArray();
+                using var validationStream = new MemoryStream(bytes, writable: false);
+                using var validation = new Bitmap(validationStream);
+                var data = new DataTransfer();
+                // The clipboard may request pixels after the preview closes. Decode independently on each request.
+                data.Add(DataTransferItem.Create(DataFormat.Bitmap, () =>
+                {
+                    using var stream = new MemoryStream(bytes, writable: false);
+                    return new Bitmap(stream);
+                }));
+                await clipboard.SetDataAsync(data);
+                ToolTip.SetTip(source, _owner._loc["Copied"]);
+                _owner.StatusText.Text = _owner._loc["Copied"];
+            }
+            catch (Exception ex)
+            {
+                _owner._context.Log.Warn($"Copying generated image failed: {ex.Message}");
+                ToolTip.SetTip(source, $"{_owner._loc["Error"]}: {ex.Message}");
+                _owner.StatusText.Text = $"{_owner._loc["Error"]}: {ex.Message}";
+            }
         }
 
         private async Task SaveImageAsync(ChatGeneratedImage reference)

@@ -22,7 +22,7 @@ internal sealed class ImagePreviewView : Grid
     private double _zoom = 1;
     private bool _fit = true;
 
-    internal ImagePreviewView(Bitmap bitmap, Loc loc, double screenScaling)
+    internal ImagePreviewView(Bitmap bitmap, Loc loc, double screenScaling, Func<Control, Task>? copyImage = null)
     {
         _pixels = bitmap.PixelSize;
         _screenScaling = screenScaling > 0 ? screenScaling : 1;
@@ -46,11 +46,12 @@ internal sealed class ImagePreviewView : Grid
         _percentage = new TextBlock { Name = "ImageZoomPercentage", VerticalAlignment = VerticalAlignment.Center };
         _percentage[!TextBlock.ForegroundProperty] = new DynamicResourceExtension("VelaTextPrimary");
         _percentage[!TextBlock.FontSizeProperty] = new DynamicResourceExtension("VelaFontSize11");
-        var toolbar = new StackPanel
+        var toolbar = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Center,
-            Spacing = 8,
+            ItemSpacing = 8,
+            LineSpacing = 4,
             Margin = new Thickness(8, 4),
             Children =
             {
@@ -61,6 +62,15 @@ internal sealed class ImagePreviewView : Grid
                 Action(loc["ImageFitWindow"], loc["ImageFitWindow"], Fit)
             }
         };
+        if (copyImage is not null)
+        {
+            var copy = new Button { Name = "ImagePreviewCopyAction", Content = loc["CopyGeneratedImage"] };
+            copy[!ThemeProperty] = new DynamicResourceExtension("VelaOutlineButtonTheme");
+            ToolTip.SetTip(copy, loc["CopyGeneratedImage"]);
+            AutomationProperties.SetName(copy, loc["CopyGeneratedImage"]);
+            copy.Click += async (_, _) => await copyImage(copy);
+            toolbar.Children.Add(copy);
+        }
         SetRow(toolbar, 1);
         Children.Add(_scroll);
         Children.Add(toolbar);
