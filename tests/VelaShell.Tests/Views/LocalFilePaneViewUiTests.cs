@@ -179,7 +179,7 @@ public sealed class LocalFilePaneViewUiTests
                     ["name", "size", "modified"], view.GetVisualDescendants().OfType<Button>()
                         .Where(button => button.Classes.Contains("col-header"))
                         .Select(button => button.CommandParameter as string)
-                        .ToArray(), Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder, "三列都应可点。");
+                        .ToArray(), SequenceOrder.InAnyOrder, "三列都应可点。");
             }
             finally
             {
@@ -240,7 +240,7 @@ public sealed class LocalFilePaneViewUiTests
                 window.DragDrop(overLocal, RawDragEventType.Drop, systemFiles, DragDropEffects.Copy | DragDropEffects.Move, RawInputModifiers.None);
                 Pump(window);
                 Assert.AreSequenceEqual(
-                    ["keep.txt"], Directory.GetFileSystemEntries(root.Path).Select(Path.GetFileName).ToArray(), Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder, "松手也不复制");
+                    ["keep.txt"], Directory.GetFileSystemEntries(root.Path).Select(Path.GetFileName).ToArray(), SequenceOrder.InAnyOrder, "松手也不复制");
 
                 Assert.AreEqual(DragDropEffects.Copy, DragOver(window, overRemote, systemFiles, effect), "系统文件拖进远端栏照旧是上传");
                 window.DragDrop(overRemote, RawDragEventType.DragLeave, systemFiles, DragDropEffects.Copy, RawInputModifiers.None);

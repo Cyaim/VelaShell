@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Media;
 using Avalonia.VisualTree;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Ui;
@@ -151,9 +152,9 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 Border popupBody = Find<Border>(panel, "ModelPopupBody");
-                Assert.IsTrue(combo.GetVisualAncestors().Contains(popupBody),
+                Assert.Contains(popupBody, combo.GetVisualAncestors(),
                     "思考档位在模型弹层内,不再单独占工具条宽度");
-                Grid modelControls = (Grid)Find<Button>(panel, "ModelButton").Parent!;
+                var modelControls = (Grid)Find<Button>(panel, "ModelButton").Parent!;
                 Assert.AreEqual(GridUnitType.Star,
                     modelControls.ColumnDefinitions[Grid.GetColumn(Find<Button>(panel, "ModelButton"))].Width.GridUnitType);
             }
@@ -185,9 +186,9 @@ public sealed partial class ChatPanelViewUiTests
             {
                 Assert.IsNotNull(combo.Foreground, "未加载宿主主题时仍须保留可见文字");
                 Assert.DoesNotContain("overridden", combo.Classes);
-                panel.Resources["VelaAccentDim"] = Avalonia.Media.Brushes.CornflowerBlue;
+                panel.Resources["VelaAccentDim"] = Brushes.CornflowerBlue;
                 Button modelButton = Find<Button>(panel, "ModelButton");
-                var modelBackground = modelButton.Background;
+                IBrush? modelBackground = modelButton.Background;
 
                 combo.SelectedIndex = (int)ReasoningLevel.High;
                 await PumpAsync(10);

@@ -57,7 +57,7 @@ public sealed class PanelWidthMemoryTests
             {
                 await context.RecordingCommands.RunAsync($"{context.PluginId}.chat");
 
-                Assert.AreEqual(1, context.FakeUi.Panels.Count);
+                Assert.HasCount(1, context.FakeUi.Panels);
                 Assert.AreSame(panel, context.FakeUi.LastPanel);
                 Assert.AreEqual(1, panel.ActivateCount);
             }
@@ -140,11 +140,11 @@ public sealed class PanelWidthMemoryTests
                 foreach (string name in new[] { "HistoryToggle", "NewChatButton", "ToolsButton", "SettingsButton" })
                 {
                     Control button = view.GetControl<Control>(name);
-                    var position = button.TranslatePoint(default, view)!.Value;
+                    Point position = button.TranslatePoint(default, view)!.Value;
                     Assert.IsTrue(position.X >= 0 && position.X + button.Bounds.Width <= view.Bounds.Width,
                         $"{name} 不得被长服务器名称挤出面板");
                 }
-                Assert.IsTrue(combo.Bounds.Width < 180);
+                Assert.IsLessThan(180, combo.Bounds.Width);
             }
             finally { view.Detach(); window.Close(); }
         });

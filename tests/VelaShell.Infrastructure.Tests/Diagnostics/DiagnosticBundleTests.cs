@@ -88,7 +88,7 @@ public sealed class DiagnosticBundleTests : IDisposable
         Assert.IsFalse(File.Exists(zipPath + ".partial"));
         using ZipArchive zip = ZipFile.OpenRead(zipPath);
         Assert.AreSequenceEqual(
-            ["logs/velashell-20261019.log", "logs/velashell-20261020.log", "logs/crash-20261019-101010-000.txt", "summary.txt", "README.txt"], [.. zip.Entries.Select(entry => entry.FullName)], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
+            ["logs/velashell-20261019.log", "logs/velashell-20261020.log", "logs/crash-20261019-101010-000.txt", "summary.txt", "README.txt"], [.. zip.Entries.Select(entry => entry.FullName)], SequenceOrder.InAnyOrder);
         string all = string.Join('\n', zip.Entries.Select(Read));
         foreach (string secret in new[] { "deploy", "db1.example.net", "Alice", "203.0.113.9" })
         {
@@ -268,7 +268,7 @@ public sealed class DiagnosticBundleTests : IDisposable
         Assert.AreEqual(2, result.LogFiles);
         using ZipArchive zip = ZipFile.OpenRead(zipPath);
         Assert.AreSequenceEqual(
-            ["logs/velashell-20261019.log", "logs/crash-20261019-101010-000.txt", "summary.txt", "README.txt"], [.. zip.Entries.Select(entry => entry.FullName)], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
+            ["logs/velashell-20261019.log", "logs/crash-20261019-101010-000.txt", "summary.txt", "README.txt"], [.. zip.Entries.Select(entry => entry.FullName)], SequenceOrder.InAnyOrder);
         Assert.Contains("optional logs: (none)", Read(zip.GetEntry("README.txt")!));
     }
 
@@ -293,7 +293,7 @@ public sealed class DiagnosticBundleTests : IDisposable
         Assert.AreEqual(DiagnosticLogKind.Plugin, ai.Kind);
         Assert.AreEqual("velashell.ai", ai.PluginId);
         Assert.AreSequenceEqual(
-            [Path.Combine(Logs, "plugins", "velashell.ai.log"), Path.Combine(Logs, "plugins", "velashell.ai.1.log")], [.. ai.Files], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder, "轮转下来的那份归同一个插件");
+            [Path.Combine(Logs, "plugins", "velashell.ai.log"), Path.Combine(Logs, "plugins", "velashell.ai.1.log")], [.. ai.Files], SequenceOrder.InAnyOrder, "轮转下来的那份归同一个插件");
         Assert.AreEqual(ai.Files.Sum(file => new FileInfo(file).Length), ai.Bytes);
 
         Assert.IsEmpty(DiagnosticBundle.FindOptionalLogs(Path.Combine(_root, "missing"), null), "目录不在就一类都没有");
@@ -316,7 +316,7 @@ public sealed class DiagnosticBundleTests : IDisposable
             [
                 "logs/velashell-20261019.log", "logs/crash-20261019-101010-000.txt", "logs/transfer-20261019.log",
                 "logs/plugins/velashell.ai.log", "logs/plugins/velashell.ai.1.log", "summary.txt", "README.txt"
-            ], [.. zip.Entries.Select(entry => entry.FullName)], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder, "没勾的外部编辑日志、vcxsrv.log 与另一个插件的日志不进包");
+            ], [.. zip.Entries.Select(entry => entry.FullName)], SequenceOrder.InAnyOrder, "没勾的外部编辑日志、vcxsrv.log 与另一个插件的日志不进包");
         string transfer = Read(zip.GetEntry("logs/transfer-20261019.log")!);
         Assert.AreEqual("2026-10-19 10:10:10\tUPLOAD\tC:\\Users\\<user-1>\\Desktop\\app.tar.gz\t/home/<user-2>/app.tar.gz\tCOMPLETED\n", transfer,
             "勾上的照样遮盖:别人的家目录换掉名字那一段,文件名留着");

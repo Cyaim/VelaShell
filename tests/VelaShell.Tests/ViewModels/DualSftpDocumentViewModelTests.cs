@@ -182,7 +182,10 @@ public class DualSftpDocumentViewModelTests
     {
         (ISftpService sftp, _, FileBrowserViewModel right) = PanePair(new()
         {
-            ConflictPolicy = "overwrite", ResumeEnabled = false, AutoCleanTempFiles = true, TransferMaxRetries = 0,
+            ConflictPolicy = "overwrite",
+            ResumeEnabled = false,
+            AutoCleanTempFiles = true,
+            TransferMaxRetries = 0,
         });
         RemoteFileInfo file = Entry("/src/a.txt", 10);
         sftp.ListDirectoryAsync(Right, "/", Arg.Any<CancellationToken>()).Returns([Entry("/a.txt", 23)]);
@@ -236,8 +239,11 @@ public class DualSftpDocumentViewModelTests
         {
             (ISftpService sftp, _, FileBrowserViewModel right) = PanePair(new()
             {
-                ConflictPolicy = "overwrite", ResumeEnabled = false, TransferMaxRetries = 1,
-                TransferLogging = true, LogDirectory = logDirectory,
+                ConflictPolicy = "overwrite",
+                ResumeEnabled = false,
+                TransferMaxRetries = 1,
+                TransferLogging = true,
+                LogDirectory = logDirectory,
             });
             RemoteFileInfo file = Entry("/src/a.txt", 10);
             Readable(sftp, Left, file);
@@ -294,8 +300,11 @@ public class DualSftpDocumentViewModelTests
         {
             (ISftpService sftp, _, FileBrowserViewModel right) = PanePair(new()
             {
-                ConflictPolicy = "overwrite", ResumeEnabled = false, TransferMaxRetries = 3,
-                TransferLogging = true, LogDirectory = logDirectory,
+                ConflictPolicy = "overwrite",
+                ResumeEnabled = false,
+                TransferMaxRetries = 3,
+                TransferLogging = true,
+                LogDirectory = logDirectory,
             });
             RemoteFileInfo file = Entry("/src/a.txt", 10);
             Readable(sftp, Left, file);
@@ -309,8 +318,8 @@ public class DualSftpDocumentViewModelTests
             Assert.AreEqual(TransferStatus.Failed, right.TransferSink.Transfers.Single().Status);
             await sftp.Received(1).OpenReadAsync(Left, file.FullPath, Arg.Any<CancellationToken>());
             string log = File.ReadAllText(Directory.GetFiles(logDirectory, "transfer-*.log").Single());
-            Assert.AreEqual(1, log.Split('\n').Count(line => line.Contains("ATTEMPT_FAILED", StringComparison.Ordinal)),
-                "只尝试一次,不再自动重试。");
+            Assert.ContainsSingle(line => line.Contains("ATTEMPT_FAILED", StringComparison.Ordinal),
+log.Split('\n'), "只尝试一次,不再自动重试。");
             StringAssert.Contains(log, "kind=Permanent");
         }
         finally

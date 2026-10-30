@@ -113,7 +113,7 @@ public partial class ConnectionProfileViewModel
     private void RebuildPluginPages(PluginConnectionForm? form)
     {
         PluginPages.Clear();
-        HashSet<string> taken = new(StringComparer.Ordinal) { PluginFormPage.GeneralKey, PluginFormPage.AdvancedKey };
+        HashSet<string> taken = [with(StringComparer.Ordinal), PluginFormPage.GeneralKey, PluginFormPage.AdvancedKey];
         foreach (PluginFormPage page in form?.Pages ?? [])
         {
             if (taken.Add(page.Key))

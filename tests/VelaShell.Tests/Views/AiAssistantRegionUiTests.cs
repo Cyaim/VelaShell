@@ -1,5 +1,4 @@
 using System.Reflection;
-using NSubstitute;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -7,10 +6,11 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using NSubstitute;
 using VelaShell.Core.Data;
+using VelaShell.Core.Localization;
 using VelaShell.Core.Models;
 using VelaShell.Docking.Model;
-using VelaShell.Core.Localization;
 using VelaShell.Localization;
 using VelaShell.PluginSdk.Logging;
 using VelaShell.PluginSdk.Ui;
@@ -57,8 +57,8 @@ public sealed class AiAssistantRegionUiTests
             var vm = new MainWindowViewModel();
             var terminal = new TestDocument { Id = "terminal", Title = "terminal" };
             vm.Layout.AddDocument(terminal);
-            var originalRoot = vm.Layout.Root;
-            var originalActive = vm.Layout.ActiveDocument;
+            DockNode originalRoot = vm.Layout.Root;
+            DockDocument? originalActive = vm.Layout.ActiveDocument;
             using var api = new PluginUiApi("velashell.ai", new NullLog(), () => vm);
             var content = new TextBox { Text = "unfinished question" };
             IPluginPanel panel = await api.ShowPanelAsync(new() { Title = "AI", PlacementRatio = 0.85 }, () => content);
@@ -108,13 +108,13 @@ public sealed class AiAssistantRegionUiTests
             {
                 Layout(window);
                 Grid main = window.GetControl<Grid>("MainAreaGrid");
-                var region = window.GetVisualDescendants().OfType<AiAssistantRegionView>().Single();
+                AiAssistantRegionView region = window.GetVisualDescendants().OfType<AiAssistantRegionView>().Single();
                 double dockedWidth = main.Bounds.Width;
                 Assert.AreEqual(420, vm.AiAssistant.PaneWidth, 0.1);
                 Assert.IsTrue(vm.AiAssistant.IsDocked);
                 vm.AiAssistant.TogglePin();
                 Layout(window);
-                Assert.IsTrue(main.Bounds.Width > dockedWidth + 300, "浮层只占窄边条,必须归还真实布局宽度");
+                Assert.IsGreaterThan(dockedWidth + 300, main.Bounds.Width, "浮层只占窄边条,必须归还真实布局宽度");
                 vm.AiAssistant.TogglePin();
                 Layout(window);
                 Border handle = region.GetControl<Border>("ResizeHandle");
@@ -142,12 +142,12 @@ public sealed class AiAssistantRegionUiTests
                 window.Width = 800;
                 Layout(window);
                 Assert.IsFalse(vm.AiAssistant.IsDocked, "窄窗口应临时悬浮,不能挤坏终端");
-                Assert.IsTrue(main.Bounds.Width >= 400);
+                Assert.IsGreaterThanOrEqualTo(400, main.Bounds.Width);
                 Assert.AreEqual(520, vm.AiAssistant.PreferredWidth);
                 vm.AiAssistant.Collapse();
                 Layout(window);
                 window.MouseMove(new Point(10, 300));
-                var expand = region.GetControl<Button>("ExpandButton");
+                Button expand = region.GetControl<Button>("ExpandButton");
                 window.MouseMove(expand.TranslatePoint(new Point(12, 10), window)!.Value);
                 Layout(window);
                 Assert.IsTrue(vm.AiAssistant.ShowPane, "窄窗口临时浮层也应允许移入 AI 图标展开");
@@ -174,7 +174,7 @@ public sealed class AiAssistantRegionUiTests
             vm.AiAssistant.TogglePin();
             vm.AiAssistant.SetAvailableWidth(100, 450);
             vm.AiAssistant.Hide();
-            var service = Substitute.For<ISettingsService>();
+            ISettingsService service = Substitute.For<ISettingsService>();
             AppSettings? saved = null;
             service.SaveSettingsAsync(Arg.Do<AppSettings>(value => saved = value)).Returns(Task.CompletedTask);
             typeof(MainWindow).GetField("_settingsService", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, service);
@@ -220,7 +220,7 @@ public sealed class AiAssistantRegionUiTests
                 window.MouseMove(new Point(990, 100));
                 Layout(window);
                 Assert.IsFalse(state.IsExpanded, "移入边条空白处不得展开浮层");
-                var expand = view.GetControl<Button>("ExpandButton");
+                Button expand = view.GetControl<Button>("ExpandButton");
                 window.MouseMove(expand.TranslatePoint(new Point(12, 10), window)!.Value);
                 Layout(window);
                 Assert.IsTrue(state.IsExpanded, "移入 AI 图标才展开浮层");

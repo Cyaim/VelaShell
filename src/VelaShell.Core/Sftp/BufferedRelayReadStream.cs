@@ -29,11 +29,10 @@ internal sealed class BufferedRelayReadStream : Stream
     private ExceptionDispatchInfo? _failure;
     private Block? _current;
     private int _offset;
-    private long _consumed;
     private bool _stopped;
     private readonly bool _cacheEntireFile;
 
-    internal long ConsumedBytes => _consumed;
+    internal long ConsumedBytes { get; private set; }
 
     internal bool IsEmpty { get; private set; }
 
@@ -186,7 +185,7 @@ internal sealed class BufferedRelayReadStream : Stream
         int count = Math.Min(destination.Length, block.Count - _offset);
         block.Buffer.AsSpan(_offset, count).CopyTo(destination);
         _offset += count;
-        _consumed += count;
+        ConsumedBytes += count;
         if (_offset == block.Count)
         {
             _current = null;
@@ -225,15 +224,15 @@ internal sealed class BufferedRelayReadStream : Stream
     internal async Task VerifyCompleteAsync(CancellationToken cancellationToken)
     {
         _failure?.Throw();
-        if (_expectedLength > 0 && _consumed != _expectedLength)
+        if (_expectedLength > 0 && ConsumedBytes != _expectedLength)
         {
-            throw LengthMismatch(_consumed);
+            throw LengthMismatch(ConsumedBytes);
         }
         // Do not drain unread data on behalf of an uploader that returned early.
         // For unknown sizes, only a real EOF proves completion (stat zero does not).
         if (await EnsureBlockAsync(cancellationToken).ConfigureAwait(false))
         {
-            throw LengthMismatch(_consumed);
+            throw LengthMismatch(ConsumedBytes);
         }
         await _producer.ConfigureAwait(false);
         _failure?.Throw();
@@ -284,7 +283,7 @@ internal sealed class BufferedRelayReadStream : Stream
     public override bool CanSeek => false;
     public override bool CanWrite => false;
     public override long Length => throw new NotSupportedException();
-    public override long Position { get => _consumed; set => throw new NotSupportedException(); }
+    public override long Position { get => ConsumedBytes; set => throw new NotSupportedException(); }
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
     public override void Flush() { }
     public override void SetLength(long value) => throw new NotSupportedException();

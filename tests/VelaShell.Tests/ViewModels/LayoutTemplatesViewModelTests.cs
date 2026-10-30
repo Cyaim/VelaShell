@@ -200,7 +200,7 @@ public sealed class LayoutTemplatesViewModelTests
         LayoutDocument saved = LayoutTree.Documents(item.Template.Root).Single();
         Assert.AreEqual(web.Terminal.Profile!.Id, saved.ProfileId);
         Assert.IsTrue(saved.IsPinned, "固定状态跟着存");
-        Assert.AreEqual("prompt:" + VelaShell.Core.Resources.Strings.Format("LayoutTemplate_DefaultName", 1), scene.Dialogs.Asked[0]);
+        Assert.AreEqual("prompt:" + Core.Resources.Strings.Format("LayoutTemplate_DefaultName", 1), scene.Dialogs.Asked[0]);
         Assert.IsTrue(scene.Store.Rows.ContainsKey((LayoutTemplateStore.Collection, item.Template.Id.ToString("D"))));
         Assert.Contains("quick", LastToast(scene), "没存进去的那个点名说出来");
 
@@ -224,7 +224,7 @@ public sealed class LayoutTemplatesViewModelTests
 
         Assert.IsEmpty(scene.Dialogs.Asked);
         Assert.IsEmpty(scene.Store.Rows);
-        Assert.AreEqual(VelaShell.Core.Resources.Strings.Get("LayoutTemplate_NothingToSave"), LastToast(scene));
+        Assert.AreEqual(Core.Resources.Strings.Get("LayoutTemplate_NothingToSave"), LastToast(scene));
     }
 
     [TestMethod]
@@ -341,7 +341,7 @@ public sealed class LayoutTemplatesViewModelTests
         Assert.AreEqual(1, result.Opened);
         Assert.AreEqual("web", scene.Workspace.AllDocuments().Single().Title);
         string toast = LastToast(scene);
-        Assert.Contains(VelaShell.Core.Resources.Strings.Format("LayoutTemplate_MissingProfile", "db"), toast);
+        Assert.Contains(Core.Resources.Strings.Format("LayoutTemplate_MissingProfile", "db"), toast);
     }
 
     [TestMethod]
@@ -415,7 +415,7 @@ public sealed class LayoutTemplatesViewModelTests
 
             LayoutTemplateItemViewModel imported = laptop.ViewModel.Templates.Single();
             Assert.AreEqual((prod.Template.Id, "prod", 2), (imported.Template.Id, imported.Name, imported.DocumentCount));
-            Assert.AreEqual(VelaShell.Core.Resources.Strings.Format("LayoutTemplate_Imported", 1), LastToast(laptop));
+            Assert.AreEqual(Core.Resources.Strings.Format("LayoutTemplate_Imported", 1), LastToast(laptop));
             Assert.DoesNotContain(a => a.StartsWith("choose:", StringComparison.Ordinal), laptop.Dialogs.Asked, "没有冲突就不问");
         }
         finally
@@ -437,7 +437,7 @@ public sealed class LayoutTemplatesViewModelTests
 
             Assert.AreEqual(1, await other.ViewModel.ImportAsync());
 
-            Assert.AreEqual(VelaShell.Core.Resources.Strings.Format("LayoutTemplate_ImportedMissing", 1, 1), LastToast(other));
+            Assert.AreEqual(Core.Resources.Strings.Format("LayoutTemplate_ImportedMissing", 1, 1), LastToast(other));
             Assert.HasCount(1, other.ViewModel.Templates, "照样导入:配置以后可能随同步过来,打开时照现有口径跳过");
         }
         finally
@@ -547,7 +547,7 @@ public sealed class LayoutTemplatesViewModelTests
         {
             Assert.IsNull(await scene.ViewModel.ImportAsync());
 
-            Assert.AreEqual(VelaShell.Core.Resources.Strings.Get("LayoutTemplate_ImportInvalid"), LastToast(scene));
+            Assert.AreEqual(Core.Resources.Strings.Get("LayoutTemplate_ImportInvalid"), LastToast(scene));
             Assert.IsEmpty(scene.Store.Rows);
         }
         finally
@@ -564,7 +564,7 @@ public sealed class LayoutTemplatesViewModelTests
 
         Assert.IsFalse(await scene.ViewModel.ExportAsync());
 
-        Assert.AreEqual(VelaShell.Core.Resources.Strings.Get("LayoutTemplate_NothingToExport"), LastToast(scene));
+        Assert.AreEqual(Core.Resources.Strings.Get("LayoutTemplate_NothingToExport"), LastToast(scene));
         Assert.IsFalse(File.Exists(scene.Dialogs.FilePath));
     }
 
@@ -664,7 +664,7 @@ public sealed class LayoutTemplatesViewModelTests
 
         CommandPaletteItem template = items.Single(item => item.Id.StartsWith("layout:", StringComparison.Ordinal));
         Assert.AreEqual("prod", template.Title);
-        Assert.AreEqual(VelaShell.Core.Resources.Strings.Get("LayoutTemplate_Title"), template.Category);
+        Assert.AreEqual(Core.Resources.Strings.Get("LayoutTemplate_Title"), template.Category);
         string[] ids = [.. vm.Commands.All.Select(command => command.Id)];
         CollectionAssert.IsSubsetOf(new[] { "layout.save", "layout.manage" }, ids);
     }

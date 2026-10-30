@@ -645,21 +645,20 @@ public sealed class ConnectionProfileViewUiTests
     }
 
     private static List<Button> TypeTiles(Window window) =>
-        window.GetVisualDescendants().OfType<Button>().Where(button => button.Classes.Contains("type-tile")).ToList();
+        [.. window.GetVisualDescendants().OfType<Button>().Where(button => button.Classes.Contains("type-tile"))];
 
     private static string? TileName(Button tile) =>
         tile.GetVisualDescendants().OfType<TextBlock>().Single(text => text.Classes.Contains("type-tile-name")).Text;
 
     private static bool[] TileSelection(Window window) =>
-        TypeTiles(window).Select(tile => tile.Classes.Contains("selected")).ToArray();
+        [.. TypeTiles(window).Select(tile => tile.Classes.Contains("selected"))];
 
     /// <summary>页脚右侧此刻看得见的按钮,按从左到右的顺序。</summary>
     private static string?[] VisibleFooterButtons(Window window) =>
-        window.FindControl<Button>("ConnectButton")!.GetVisualParent<StackPanel>()!.Children
+        [.. window.FindControl<Button>("ConnectButton")!.GetVisualParent<StackPanel>()!.Children
             .OfType<Button>()
             .Where(button => button.IsVisible)
-            .Select(button => button.Name)
-            .ToArray();
+            .Select(button => button.Name)];
 
     private static void Layout(Window window)
     {
@@ -730,11 +729,10 @@ public sealed class ConnectionProfileViewUiTests
                 Assert.IsFalse(window.FindControl<StackPanel>("TypeHeader")!.IsEffectivelyVisible, "还在卡片上,表头不出现。");
 
                 List<Button> tiles = TypeTiles(window);
-                CollectionAssert.AreEqual(new[] { "MySQL", "PostgreSQL", "SQLite" }, tiles.Select(TileName).ToArray(),
-                    "一个候选项一张卡片,顺序同候选项。");
+                Assert.AreSequenceEqual(["MySQL", "PostgreSQL", "SQLite"], tiles.Select(TileName).ToArray(), "一个候选项一张卡片,顺序同候选项。");
                 Assert.IsTrue(tiles.All(tile => tile.IsEffectivelyVisible && tile.IsTabStop), "卡片都要看得见、Tab 得到。");
                 Assert.IsTrue(tiles.All(tile => tile.Bounds is { Width: 112, Height: 88 }), "磁贴 112×88(DESIGN.md §5.2)。");
-                CollectionAssert.AreEqual(new[] { true, false, false }, TileSelection(window), "默认那一档预选、只有它高亮。");
+                Assert.AreSequenceEqual([true, false, false], TileSelection(window), "默认那一档预选、只有它高亮。");
                 Assert.IsTrue(tiles.All(tile => tile.Transitions is null || tile.Transitions.Count == 0),
                     "磁贴不挂画刷过渡(#577)。");
                 Geometry? plug = ConnectionIcon.GeometryFor(ConnectionIcon.PluginKey);
@@ -742,8 +740,7 @@ public sealed class ConnectionProfileViewUiTests
                 Assert.IsTrue(tiles.All(tile => ReferenceEquals(tile.GetVisualDescendants().OfType<LucideIcon>().Single().Data, plug)),
                     "描述符没给图标:卡片画协议栏同款的通用插头,而不是空着。");
 
-                CollectionAssert.AreEqual(new[] { "PickTypeCancelButton", "NextButton" }, VisibleFooterButtons(window),
-                    "卡片那一屏页脚只有 [取消][下一步]。");
+                Assert.AreSequenceEqual(["PickTypeCancelButton", "NextButton"], VisibleFooterButtons(window), "卡片那一屏页脚只有 [取消][下一步]。");
                 Assert.IsFalse(window.FindControl<Grid>("EndpointPreviewRow")!.IsEffectivelyVisible, "还没有端点,预览收起。");
                 Button next = window.FindControl<Button>("NextButton")!;
                 Button cancel = window.FindControl<Button>("PickTypeCancelButton")!;
@@ -754,7 +751,7 @@ public sealed class ConnectionProfileViewUiTests
 
                 Click(window, tiles[1]);
                 Assert.IsTrue(vm.IsPickingType, "单击只选不走。");
-                CollectionAssert.AreEqual(new[] { false, true, false }, TileSelection(window), "高亮跟到点的那张。");
+                Assert.AreSequenceEqual([false, true, false], TileSelection(window), "高亮跟到点的那张。");
                 Assert.AreEqual("postgresql", vm.SelectedTypeValue);
             }
             finally
@@ -793,13 +790,11 @@ public sealed class ConnectionProfileViewUiTests
                 Assert.IsTrue(window.FindControl<StackPanel>("TypeHeader")!.IsEffectivelyVisible, "表单顶部出「类型」那一行。");
                 Assert.AreEqual("PostgreSQL", window.FindControl<TextBlock>("TypeHeaderValue")!.Text);
                 Assert.IsFalse(window.FindControl<Button>("ChangeTypeLink")!.IsEffectivelyVisible, "新建时没有「更换」。");
-                Assert.IsFalse(window.GetVisualDescendants().OfType<TextBlock>()
-                        .Any(text => text.Text == DialectLabel && text.IsEffectivelyVisible),
+                Assert.DoesNotContain(text => text.Text == DialectLabel && text.IsEffectivelyVisible, window.GetVisualDescendants().OfType<TextBlock>(),
                     "表单里那一行类型下拉不再出现,由表头替代(D11)。");
                 Assert.AreEqual(5432, vm.Port, "端口跟到 PostgreSQL 的默认值。");
 
-                CollectionAssert.AreEqual(new[] { "BackButton", "TestButton", "SaveButton", "ConnectButton" },
-                    VisibleFooterButtons(window), "新建的表单:[上一步][测试][保存][连接]。");
+                Assert.AreSequenceEqual(["BackButton", "TestButton", "SaveButton", "ConnectButton"], VisibleFooterButtons(window), "新建的表单:[上一步][测试][保存][连接]。");
                 Assert.IsTrue(window.FindControl<Grid>("EndpointPreviewRow")!.IsEffectivelyVisible, "表单阶段照旧显示连接目标预览。");
                 Button back = window.FindControl<Button>("BackButton")!;
                 Assert.IsTrue(back.IsEffectivelyEnabled);
@@ -809,7 +804,7 @@ public sealed class ConnectionProfileViewUiTests
                 Click(window, back);
                 Assert.IsTrue(vm.IsPickingType, "「上一步」回到卡片。");
                 Assert.IsTrue(window.FindControl<ScrollViewer>("TypePickerPanel")!.IsEffectivelyVisible);
-                CollectionAssert.AreEqual(new[] { false, true, false }, TileSelection(window), "回来时高亮停在当前类型上。");
+                Assert.AreSequenceEqual([false, true, false], TileSelection(window), "回来时高亮停在当前类型上。");
 
                 Click(window, TypeTiles(window)[0], twice: true);
                 Assert.IsFalse(vm.IsPickingType, "双击卡片 = 选中并下一步。");
@@ -849,7 +844,7 @@ public sealed class ConnectionProfileViewUiTests
             try
             {
                 Layout(window);
-                Assert.IsTrue(vm.IsEditing);                Assert.IsFalse(vm.IsPickingType, "编辑已有配置不先出卡片。");
+                Assert.IsTrue(vm.IsEditing); Assert.IsFalse(vm.IsPickingType, "编辑已有配置不先出卡片。");
 
                 Assert.IsTrue(window.FindControl<ScrollViewer>("FormScroll")!.IsEffectivelyVisible);
                 Assert.IsTrue(window.FindControl<Button>("GeneralTab")!.IsEffectivelyVisible);
@@ -858,18 +853,16 @@ public sealed class ConnectionProfileViewUiTests
                 Assert.AreEqual("PostgreSQL", window.FindControl<TextBlock>("TypeHeaderValue")!.Text);
                 Button change = window.FindControl<Button>("ChangeTypeLink")!;
                 Assert.IsTrue(change.IsEffectivelyVisible, "编辑态改类型走表头的「更换」。");
-                Assert.IsFalse(window.GetVisualDescendants().OfType<TextBlock>()
-                        .Any(text => text.Text == DialectLabel && text.IsEffectivelyVisible),
+                Assert.DoesNotContain(text => text.Text == DialectLabel && text.IsEffectivelyVisible, window.GetVisualDescendants().OfType<TextBlock>(),
                     "编辑态同样不显示那一行类型下拉(D11)。");
-                CollectionAssert.AreEqual(new[] { "TestButton", "SaveButton", "ConnectButton" }, VisibleFooterButtons(window),
-                    "编辑态的表单没有「上一步」。");
+                Assert.AreSequenceEqual(["TestButton", "SaveButton", "ConnectButton"], VisibleFooterButtons(window), "编辑态的表单没有「上一步」。");
                 SaveOptionalFrame(window, "type-picker-form-edit.png");
 
                 Click(window, change);
                 Assert.IsTrue(vm.IsPickingType, "「更换」回到卡片。");
                 Assert.IsTrue(window.FindControl<ScrollViewer>("TypePickerPanel")!.IsEffectivelyVisible);
-                CollectionAssert.AreEqual(new[] { false, true, false }, TileSelection(window), "高亮在当前类型(PostgreSQL)上。");
-                CollectionAssert.AreEqual(new[] { "PickTypeCancelButton", "NextButton" }, VisibleFooterButtons(window));
+                Assert.AreSequenceEqual([false, true, false], TileSelection(window), "高亮在当前类型(PostgreSQL)上。");
+                Assert.AreSequenceEqual(["PickTypeCancelButton", "NextButton"], VisibleFooterButtons(window));
             }
             finally
             {
@@ -919,7 +912,8 @@ public sealed class ConnectionProfileViewUiTests
                 Assert.AreEqual("PostgreSQL", vm.CurrentTypeLabel, "类型是按 Enter 的那张卡。");
                 Assert.AreEqual("PostgreSQL", window.FindControl<TextBlock>("TypeHeaderValue")!.Text);
                 Assert.AreEqual(5432, vm.Port, "端口跟到 PostgreSQL 的默认值。");
-                Assert.IsTrue(window.FindControl<ScrollViewer>("FormScroll")!.IsEffectivelyVisible, "表单回来。");            }
+                Assert.IsTrue(window.FindControl<ScrollViewer>("FormScroll")!.IsEffectivelyVisible, "表单回来。");
+            }
             finally
             {
                 window.Close();
@@ -943,9 +937,10 @@ public sealed class ConnectionProfileViewUiTests
 
                 Assert.IsTrue(vm.IsPickingType, "Space 只选中,不离开卡片。");
                 Assert.AreEqual("postgresql", vm.SelectedTypeValue, "选中的是按 Space 的那张卡。");
-                CollectionAssert.AreEqual(new[] { false, true, false }, TileSelection(window), "高亮跟到那张卡。");
+                Assert.AreSequenceEqual([false, true, false], TileSelection(window), "高亮跟到那张卡。");
                 Assert.AreEqual("MySQL", vm.CurrentTypeLabel, "还没点下一步,类型不变。");
-                Assert.AreEqual(3306, vm.Port, "还没点下一步,端口不动。");            }
+                Assert.AreEqual(3306, vm.Port, "还没点下一步,端口不动。");
+            }
             finally
             {
                 window.Close();
@@ -1007,10 +1002,9 @@ public sealed class ConnectionProfileViewUiTests
 
     /// <summary>页签条上此刻看得见的页签,从左到右。</summary>
     private static List<Button> VisibleSectionTabs(Window window) =>
-        window.GetVisualDescendants().OfType<Button>()
+        [.. window.GetVisualDescendants().OfType<Button>()
             .Where(button => button.Classes.Contains("section-tab") && button.IsEffectivelyVisible)
-            .OrderBy(button => button.TranslatePoint(default, window)?.X ?? double.NaN)
-            .ToList();
+            .OrderBy(button => button.TranslatePoint(default, window)?.X ?? double.NaN)];
 
     private static bool LabelShowing(Window window, string label) =>
         window.GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == label && text.IsEffectivelyVisible);
@@ -1052,14 +1046,11 @@ public sealed class ConnectionProfileViewUiTests
                 List<Button> tabs = VisibleSectionTabs(window);
                 Button general = window.FindControl<Button>("GeneralTab")!;
                 Button advanced = window.FindControl<Button>("AdvancedTab")!;
-                CollectionAssert.AreEqual(
-                    new object?[] { null, "database", "ssl", null },
-                    tabs.Select(tab => tab.Tag).ToArray(),
-                    "页签从左到右:常规、数据库、SSL、高级。");
+                Assert.AreSequenceEqual(
+                    [null, "database", "ssl", null], tabs.Select(tab => tab.Tag).ToArray(), "页签从左到右:常规、数据库、SSL、高级。");
                 Assert.AreSame(general, tabs[0]);
                 Assert.AreSame(advanced, tabs[3]);
-                CollectionAssert.AreEqual(new[] { "数据库", "SSL" },
-                    tabs.Skip(1).Take(2).Select(tab => tab.GetVisualDescendants().OfType<TextBlock>().First().Text).ToArray());
+                Assert.AreSequenceEqual(["数据库", "SSL"], tabs.Skip(1).Take(2).Select(tab => tab.GetVisualDescendants().OfType<TextBlock>().First().Text).ToArray());
                 Assert.IsTrue(tabs.All(tab => tab.Theme == general.Theme && tab.Bounds.Height == general.Bounds.Height),
                     "自定义页签与「常规」同一个主题、同高。");
                 double Left(Button tab) => tab.TranslatePoint(default, window)?.X ?? double.NaN;
@@ -1083,8 +1074,7 @@ public sealed class ConnectionProfileViewUiTests
                 Assert.IsTrue(LabelShowing(window, "Schema"));
                 Assert.IsFalse(LabelShowing(window, "SSL 模式"), "别的自定义页的字段不露出来。");
                 Assert.IsFalse(LabelShowing(window, "连接超时(秒)"), "「高级」的字段不露出来。");
-                Assert.IsFalse(window.GetVisualDescendants().OfType<TextBox>()
-                        .Any(box => box.Text == "10.0.0.9" && box.IsEffectivelyVisible),
+                Assert.DoesNotContain(box => box.Text == "10.0.0.9" && box.IsEffectivelyVisible, window.GetVisualDescendants().OfType<TextBox>(),
                     "「常规」页的主机那一栏不在这一页上。");
                 SaveOptionalFrame(window, "plugin-pages-database.png");
 
@@ -1092,7 +1082,8 @@ public sealed class ConnectionProfileViewUiTests
                 Assert.AreEqual("ssl", vm.SelectedPluginPageKey);
                 AssertIndicatorAligned(window.FindControl<Border>("SectionTabIndicator")!, tabs[2]);
                 Assert.IsTrue(LabelShowing(window, "SSL 模式"));
-                Assert.IsFalse(LabelShowing(window, "默认数据库"));            }
+                Assert.IsFalse(LabelShowing(window, "默认数据库"));
+            }
             finally
             {
                 window.Close();

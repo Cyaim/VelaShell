@@ -58,13 +58,13 @@ public class RemoteRelayCommitTests
             Assert.AreEqual(1234L, sink.Length);
             consumed = true;
             call.ArgAt<IProgress<TransferProgress>?>(5)!.Report(FinalProgress(1234));
-            Assert.IsFalse(progress.Items.Any(p => p.Percentage >= 100));
+            Assert.DoesNotContain(p => p.Percentage >= 100, progress.Items);
         });
         target.CommitUploadAsync(default, null!, null!, false).ReturnsForAnyArgs(call =>
         {
             Assert.IsTrue(consumed);
             Assert.IsTrue(stream.Closed);
-            Assert.IsFalse(progress.Items.Any(p => p.Percentage >= 100));
+            Assert.DoesNotContain(p => p.Percentage >= 100, progress.Items);
             Assert.AreEqual(uploadedPath, call.ArgAt<string>(1));
             Assert.AreEqual(TargetPath, call.ArgAt<string>(2));
             Assert.IsTrue(call.ArgAt<bool>(3));
@@ -110,9 +110,9 @@ public class RemoteRelayCommitTests
         Exception actual = await Assert.ThrowsExactlyAsync<IOException>(() =>
             RemoteRelay.TryCopyFileWithRemoteCommitAsync(source, SourceSession, SourcePath, target, TargetSession, TargetPath).WaitAsync(TimeSpan.FromSeconds(15)));
         Assert.AreSame(original, actual);
-        Assert.AreEqual((long)size, stream.Position, "源端必须完整读取后才遇到最终回复失败。");
+        Assert.AreEqual(size, stream.Position, "源端必须完整读取后才遇到最终回复失败。");
         Assert.IsGreaterThan(0L, received);
-        Assert.IsLessThanOrEqualTo((long)size, received,
+        Assert.IsLessThanOrEqualTo(size, received,
             "管道完成失败时可丢弃尚未交给目标的缓冲;不要求目标收到全部字节。");
         Assert.IsTrue(stream.Closed);
         Assert.IsNotNull(uploaded);
@@ -187,7 +187,7 @@ public class RemoteRelayCommitTests
             RemoteRelay.TryCopyFileWithRemoteCommitAsync(source, SourceSession, SourcePath, target, TargetSession, TargetPath, progress));
         Assert.AreSame(original, actual.InnerException);
         Assert.AreEqual(TransferFailureKind.Permanent, TransferRetryPolicy.Classify(actual));
-        Assert.IsFalse(progress.Items.Any(p => p.Percentage >= 100));
+        Assert.DoesNotContain(p => p.Percentage >= 100, progress.Items);
         await target.ReceivedWithAnyArgs(1).CommitUploadAsync(default, null!, null!, false);
         await target.DidNotReceiveWithAnyArgs().DeleteAsync(default, null!);
     }
@@ -261,8 +261,15 @@ public class RemoteRelayCommitTests
         target.ExistsAsync(TargetSession, TargetPath, Arg.Any<CancellationToken>()).Returns(true);
         target.GetFileInfoAsync(TargetSession, TargetPath, Arg.Any<CancellationToken>()).Returns(new RemoteFileInfo
         {
-            Name = "file", FullPath = TargetPath, Size = 4, IsDirectory = false, IsSymbolicLink = true,
-            Permissions = "lrwxrwxrwx", LastModified = default, Owner = "u", Group = "g",
+            Name = "file",
+            FullPath = TargetPath,
+            Size = 4,
+            IsDirectory = false,
+            IsSymbolicLink = true,
+            Permissions = "lrwxrwxrwx",
+            LastModified = default,
+            Owner = "u",
+            Group = "g",
         });
         Assert.IsFalse(await RemoteRelay.TryCopyFileWithRemoteCommitAsync(source, SourceSession, SourcePath, target, TargetSession, TargetPath));
         await source.DidNotReceiveWithAnyArgs().OpenReadAsync(default, null!);
@@ -295,19 +302,23 @@ public class RemoteRelayCommitTests
             await call.ArgAt<Stream>(1).CopyToAsync(Stream.Null);
             call.ArgAt<IProgress<TransferProgress>>(5).Report(new TransferProgress
             {
-                FileName = "file", BytesTransferred = length, TotalBytes = 0, Percentage = 0,
-                SpeedBytesPerSecond = 0, EstimatedTimeRemaining = TimeSpan.Zero,
+                FileName = "file",
+                BytesTransferred = length,
+                TotalBytes = 0,
+                Percentage = 0,
+                SpeedBytesPerSecond = 0,
+                EstimatedTimeRemaining = TimeSpan.Zero,
             });
         });
         target.CommitUploadAsync(default, null!, null!, false).ReturnsForAnyArgs(_ =>
         {
-            Assert.IsFalse(progress.Items.Any(p => p.Percentage == 100));
+            Assert.DoesNotContain(p => p.Percentage == 100, progress.Items);
             return Task.CompletedTask;
         });
         Assert.IsTrue(await RemoteRelay.TryCopyFileWithRemoteCommitAsync(source, SourceSession, SourcePath, target, TargetSession, TargetPath, progress));
         TransferProgress final = progress.Items.Single(p => p.Percentage == 100);
-        Assert.AreEqual((long)length, final.TotalBytes);
-        Assert.AreEqual((long)length, final.BytesTransferred);
+        Assert.AreEqual(length, final.TotalBytes);
+        Assert.AreEqual(length, final.BytesTransferred);
         Assert.AreEqual("file", final.FileName);
     }
 
@@ -322,7 +333,7 @@ public class RemoteRelayCommitTests
         await using var service = new SerializedSftpService(inner, TargetSession);
         Task listing = service.ListDirectoryAsync(TargetSession, "/");
         Task committing = service.CommitUploadAsync(TargetSession, "/temp", TargetPath, true);
-        Assert.IsTrue(inner.ReceivedCalls().Any(call => call.GetMethodInfo().Name == nameof(ISftpService.CommitUploadAsync)));
+        Assert.Contains(call => call.GetMethodInfo().Name == nameof(ISftpService.CommitUploadAsync), inner.ReceivedCalls());
         Task closing = service.CloseAsync();
         try
         {
@@ -343,8 +354,14 @@ public class RemoteRelayCommitTests
         ISftpService source = Substitute.For<ISftpService>();
         source.GetFileInfoAsync(SourceSession, SourcePath, Arg.Any<CancellationToken>()).Returns(new RemoteFileInfo
         {
-            Name = "file", FullPath = SourcePath, Size = size, Permissions = "-rw-r--r--", Owner = "u", Group = "g",
-            IsDirectory = false, LastModified = default,
+            Name = "file",
+            FullPath = SourcePath,
+            Size = size,
+            Permissions = "-rw-r--r--",
+            Owner = "u",
+            Group = "g",
+            IsDirectory = false,
+            LastModified = default,
         });
         source.OpenReadAsync(SourceSession, SourcePath, Arg.Any<CancellationToken>()).Returns(Task.FromResult(stream));
         ISftpService target = Substitute.For<ISftpService>();
@@ -362,8 +379,12 @@ public class RemoteRelayCommitTests
 
     private static TransferProgress FinalProgress(long size) => new()
     {
-        FileName = "file", BytesTransferred = size, TotalBytes = size, Percentage = 100,
-        SpeedBytesPerSecond = 0, EstimatedTimeRemaining = TimeSpan.Zero,
+        FileName = "file",
+        BytesTransferred = size,
+        TotalBytes = size,
+        Percentage = 100,
+        SpeedBytesPerSecond = 0,
+        EstimatedTimeRemaining = TimeSpan.Zero,
     };
 
     private sealed class RecordingProgress : IProgress<TransferProgress>
@@ -379,7 +400,7 @@ public class RemoteRelayCommitTests
         public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult(base.Read(buffer.Span[..Math.Min(buffer.Length, chunk)]));
+            return ValueTask.FromResult(Read(buffer.Span[..Math.Min(buffer.Length, chunk)]));
         }
 
         public override ValueTask DisposeAsync()

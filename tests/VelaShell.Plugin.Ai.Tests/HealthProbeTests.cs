@@ -645,7 +645,7 @@ public sealed class HealthProbeTests
 
         (Exception? error, _) = await HealthProbe.ProbeAsync(new AiSettingsStore(context), model);
         string body = await endpoint.RequestBodyAsync.WaitAsync(TimeSpan.FromSeconds(5));
-        using JsonDocument request = JsonDocument.Parse(body);
+        using var request = JsonDocument.Parse(body);
         JsonElement root = request.RootElement;
         Assert.IsNotNull(error, "服务端对不支持档位的拒绝应继续报告");
         if (protocol == ChatProtocol.OpenAiResponses)

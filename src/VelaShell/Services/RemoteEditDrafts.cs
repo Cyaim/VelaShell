@@ -146,7 +146,7 @@ public static class RemoteEditDrafts
         DirectoryInfo[] directories;
         try
         {
-            if (!System.IO.Directory.Exists(root))
+            if (!Directory.Exists(root))
             {
                 yield break;
             }
@@ -232,7 +232,7 @@ public static class RemoteEditDrafts
     {
         IReadOnlyList<RemoteEditDraft> drafts = ListDrafts(root);
         string target = drafts.Count == 1 ? drafts[0].Directory : root;
-        if (!System.IO.Directory.Exists(target))
+        if (!Directory.Exists(target))
         {
             return false;
         }

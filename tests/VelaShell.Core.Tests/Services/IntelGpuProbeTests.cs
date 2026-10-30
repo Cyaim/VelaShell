@@ -69,7 +69,7 @@ public sealed class IntelGpuProbeTests
         Assert.AreEqual(16384000L * 1024, integrated.MemTotalBytes);
         Assert.IsTrue(integrated.ClientScopedUtil);
         GpuUsageCounter counters = before.GpuUsageCounters.Single(c => c.Card == "card0");
-        Assert.AreSequenceEqual(["7", "9"], [.. counters.Engines.Select(e => e.Client).Distinct()], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual(["7", "9"], [.. counters.Engines.Select(e => e.Client).Distinct()], SequenceOrder.InAnyOrder);
         Assert.AreEqual(1000.0, counters.UptimeSeconds);
 
         GpuDevice discrete = before.Gpus.Single(g => g.Card == "card1");

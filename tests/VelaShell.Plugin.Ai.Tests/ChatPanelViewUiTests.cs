@@ -1183,7 +1183,7 @@ public sealed partial class ChatPanelViewUiTests
                 Grid toolbar = Find<Grid>(panel, "InputToolbar");
                 Button model = Find<Button>(panel, "ModelButton");
                 ComboBox mode = Find<ComboBox>(panel, "ModeCombo");
-                Assert.IsTrue(toolbar.GetVisualDescendants().Contains(tools), "工具配置应在模型选择右侧的操作行");
+                Assert.Contains(tools, toolbar.GetVisualDescendants(), "工具配置应在模型选择右侧的操作行");
                 Assert.IsNotNull(tools.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>().Single().Data,
                     "工具图标在没有宿主图标资源时也应可用");
                 usage.Text = new string('8', 100);
@@ -1202,7 +1202,7 @@ public sealed partial class ChatPanelViewUiTests
                     Point modeOrigin = mode.TranslatePoint(default, toolbar)!.Value;
                     Assert.AreEqual(modelOrigin.X + model.Bounds.Width + tools.Margin.Left, toolsOrigin.X, 1,
                         "工具入口应紧邻模型选择右侧");
-                    Assert.IsTrue(toolsOrigin.X + tools.Bounds.Width <= modeOrigin.X,
+                    Assert.IsLessThanOrEqualTo(modeOrigin.X, toolsOrigin.X + tools.Bounds.Width,
                         "工具入口应位于模式选择左侧");
                 }
             }

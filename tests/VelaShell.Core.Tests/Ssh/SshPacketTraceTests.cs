@@ -146,7 +146,7 @@ public sealed class SshPacketTraceTests
         }
 
         string[] hops = [.. trace.Snapshot().Select(static e => e.Hop).Distinct()];
-        Assert.AreSequenceEqual([$"jumper@127.0.0.1:{jump.Port}", "joe@target.internal:22"], hops, Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual([$"jumper@127.0.0.1:{jump.Port}", "joe@target.internal:22"], hops, SequenceOrder.InAnyOrder);
         Assert.Contains(static e => e is { Hop: "joe@target.internal:22", MessageNumber: 52 }, trace.Snapshot(), "终点那一跳的认证成功");
     }
 

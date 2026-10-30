@@ -35,7 +35,9 @@ public sealed partial class ChatPanelViewUiTests
             AiProvider second = StubProvider("Second", "http://127.0.0.1:1/v1", "shared");
             await new AiSettingsStore(context).SaveAsync(new AiSettings
             {
-                Providers = [first, second], ActiveModelId = first.Models[0].Id, SuggestFollowUps = false
+                Providers = [first, second],
+                ActiveModelId = first.Models[0].Id,
+                SuggestFollowUps = false
             });
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
@@ -48,7 +50,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.AreEqual("First·shared", list.Items[0]);
                 Assert.AreEqual("Second·shared", list.Items[1]);
                 var item = (ListBoxItem)list.ContainerFromIndex(1)!;
-                var root = TopLevel.GetTopLevel(list)!;
+                TopLevel root = TopLevel.GetTopLevel(list)!;
                 await ClickComposerControlAsync(root, item);
                 Assert.AreEqual(1, list.SelectedIndex);
                 Assert.Contains("Second·shared", Find<TextBlock>(panel, "ModelSummary").Text!);
@@ -84,7 +86,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(popup.IsOpen);
                 ListBox list = Find<ListBox>(panel, "ProviderList");
                 Assert.IsTrue(list.IsKeyboardFocusWithin);
-                var root = TopLevel.GetTopLevel(list)!;
+                TopLevel root = TopLevel.GetTopLevel(list)!;
                 root.KeyPressQwerty(PhysicalKey.ArrowDown, RawInputModifiers.None);
                 await PumpAsync(10);
                 Assert.AreEqual(1, list.SelectedIndex);
@@ -147,7 +149,7 @@ public sealed partial class ChatPanelViewUiTests
                     Assert.AreEqual(sendOrigin.Y + sendButton.Bounds.Height / 2,
                         modeOrigin.Y + modePicker.Bounds.Height / 2, 1,
                         "模式选择应与发送按钮保持同一水平线");
-                    Assert.IsTrue(modeOrigin.X + modePicker.Bounds.Width <= sendOrigin.X);
+                    Assert.IsLessThanOrEqualTo(sendOrigin.X, modeOrigin.X + modePicker.Bounds.Width);
                     Assert.AreEqual(20, Find<Grid>(panel, "InputStatusBar").Bounds.Height);
                     double actionHeight = Find<Button>(panel, "AttachButton").Bounds.Height;
                     foreach (string action in new[] { "ModelButton", "ToolsButton", "ModeCombo", "SendButton" })
@@ -168,7 +170,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsEmpty(send.GetVisualDescendants().OfType<TextBlock>(), "发送按钮只显示向上箭头");
                 await ClickComposerControlAsync(window, Find<Button>(panel, "ModelButton"));
                 Assert.IsTrue(Find<Popup>(panel, "ModelPopup").IsOpen);
-                Assert.IsTrue(Find<Border>(panel, "ModelPopupBody").Bounds.Width <= panel.Bounds.Width);
+                Assert.IsLessThanOrEqualTo(panel.Bounds.Width, Find<Border>(panel, "ModelPopupBody").Bounds.Width);
                 Assert.IsTrue(reasoning.IsEffectivelyVisible);
             }
             finally { panel.Detach(); window.Close(); }

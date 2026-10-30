@@ -1185,7 +1185,7 @@ public partial class MainWindow : Window
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
-                    System.Diagnostics.Trace.WriteLine($"[VelaShell] Saving the session layout failed: {ex.Message}");
+                    Trace.WriteLine($"[VelaShell] Saving the session layout failed: {ex.Message}");
                 }
             }
             _settingsService.SaveSettingsAsync(settings).GetAwaiter().GetResult();

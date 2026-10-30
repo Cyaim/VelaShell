@@ -331,7 +331,7 @@ internal sealed record PluginConnectionForm(
         {
             if (fields[i] is { Page: { } page } field)
             {
-                result ??= new Dictionary<string, string>(StringComparer.Ordinal);
+                result ??= [with(StringComparer.Ordinal)];
                 result.TryAdd(field.Key, page);
             }
         }

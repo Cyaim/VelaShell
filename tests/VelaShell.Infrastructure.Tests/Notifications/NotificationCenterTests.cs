@@ -218,7 +218,7 @@ public class NotificationCenterTests
         Assert.AreEqual(2, await center.RemoveByIdPrefixAsync("plugin:a.b:"));
         Assert.AreEqual(0, await center.RemoveByIdPrefixAsync("plugin:a.b:"));
 
-        Assert.AreSequenceEqual(["plugin:a.bc:3", "PLUGIN:a.b:4", "update:1"], [.. center.Items.Select(i => i.Id)], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual(["plugin:a.bc:3", "PLUGIN:a.b:4", "update:1"], [.. center.Items.Select(i => i.Id)], SequenceOrder.InAnyOrder);
         Assert.AreEqual(1, changes, "什么都没删时不触发变更");
         var reloaded = new NotificationCenter(store);
         await reloaded.LoadAsync();

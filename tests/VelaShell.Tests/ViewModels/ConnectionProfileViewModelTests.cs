@@ -5,6 +5,7 @@ using VelaShell.Core.Data;
 using VelaShell.Core.Models;
 using VelaShell.Core.Resources;
 using VelaShell.Core.Ssh;
+using VelaShell.Infrastructure.Plugins.Protocols;
 using VelaShell.Presentation.Services;
 using VelaShell.Security;
 using VelaShell.ViewModels;
@@ -893,7 +894,7 @@ public sealed class ConnectionProfileViewModelTests
     [TestMethod]
     public async Task PluginWorkspace_Variant_ReshapesTheConnectionBox()
     {
-        var registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
+        PluginProtocolRegistry registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
         using (handle)
         {
             var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
@@ -928,7 +929,7 @@ public sealed class ConnectionProfileViewModelTests
     [TestMethod]
     public async Task PluginWorkspace_Variant_DoesNotOverwriteAHandTypedPort()
     {
-        var registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
+        PluginProtocolRegistry registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
         using (handle)
         {
             var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
@@ -953,7 +954,7 @@ public sealed class ConnectionProfileViewModelTests
     [TestMethod]
     public async Task PluginWorkspace_ReselectingTheSameTab_KeepsTheVariantPort()
     {
-        var registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
+        PluginProtocolRegistry registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
         using (handle)
         {
             var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
@@ -993,7 +994,7 @@ public sealed class ConnectionProfileViewModelTests
     [TestMethod]
     public async Task PluginWorkspace_SwitchingBackToSsh_RestoresTheDefaultPort()
     {
-        var registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
+        PluginProtocolRegistry registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
         using (handle)
         {
             var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
@@ -1017,14 +1018,14 @@ public sealed class ConnectionProfileViewModelTests
     [TestMethod]
     public async Task PluginWorkspace_SwitchingToAnotherPluginTab_TakesThatTabsPort()
     {
-        var registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
+        PluginProtocolRegistry registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
         using (handle)
         using (registry.RegisterWorkspace("test.cache", new()
-               {
-                   Id = "test.cache",
-                   DisplayName = "缓存",
-                   DefaultPort = 6379
-               }, new VariantWorkspace()))
+        {
+            Id = "test.cache",
+            DisplayName = "缓存",
+            DefaultPort = 6379
+        }, new VariantWorkspace()))
         {
             var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
             await vm.SelectPluginProtocolCommand.Execute("test.db").FirstAsync();
@@ -1048,7 +1049,7 @@ public sealed class ConnectionProfileViewModelTests
     [TestMethod]
     public async Task PluginWorkspace_VariantWithoutEndpoint_HidesThePortBox()
     {
-        var registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
+        PluginProtocolRegistry registry = RegisterVariantWorkspace("test.db", out IDisposable handle);
         using (handle)
         {
             var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = @"D:\data\app.db" };

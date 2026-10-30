@@ -1077,7 +1077,7 @@ public class SftpServiceTests
         using var source = new MemoryStream(new byte[4]);
         await Assert.ThrowsExactlyAsync<VelaSftpTransferInterruptedException>(() =>
             _sftpService.UploadStreamAsync(_sessionId, source, path, 4));
-        var field = typeof(SftpService).GetField("_durableUploads", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        System.Reflection.FieldInfo field = typeof(SftpService).GetField("_durableUploads", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         var hints = (System.Collections.Concurrent.ConcurrentDictionary<(Guid, string), long>)field.GetValue(_sftpService)!;
         Assert.IsTrue(hints.ContainsKey((_sessionId, path)));
         _sftpClient.GetEntryAsync(path, Arg.Any<CancellationToken>()).ThrowsAsync(new IOException("cleanup disconnected"));

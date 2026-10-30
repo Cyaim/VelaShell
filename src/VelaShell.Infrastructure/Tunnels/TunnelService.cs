@@ -518,7 +518,7 @@ public class TunnelService(
         {
             string detail = socket is not null
                 ? socket.SocketErrorCode.ToString()
-                : innermost is not null and not VelaShell.Ssh.Diagnostics.SshException ? innermost.Message : string.Empty;
+                : innermost is not null and not SshException ? innermost.Message : string.Empty;
             return detail.Length == 0
                 ? Strings.Format("TunnelSvc_LocalSocketBindFailedNoDetail", path)
                 : Strings.Format("TunnelSvc_LocalSocketBindFailed", path, detail);

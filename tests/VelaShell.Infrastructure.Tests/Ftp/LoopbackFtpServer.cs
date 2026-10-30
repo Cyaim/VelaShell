@@ -176,7 +176,8 @@ internal sealed class LoopbackFtpServer : IDisposable
         }
     }
 
-    private async Task HandleClientAsync(TcpClient client)    {
+    private async Task HandleClientAsync(TcpClient client)
+    {
         using (client)
         {
             // Preliminary and completion replies are separate small writes. Do not let

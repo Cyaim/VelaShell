@@ -183,13 +183,13 @@ public sealed class PluginNotificationTests
 
         await service.ForgetPluginAsync(PluginId);
 
-        Assert.AreSequenceEqual(["plugin:acme.backup2:c", "plugin:gone.plugin:d", "update:9.9.9"], [.. center.Items.Select(i => i.Id)], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder, "前缀带冒号:acme.backup 不会顺手删掉 acme.backup2 的");
+        Assert.AreSequenceEqual(["plugin:acme.backup2:c", "plugin:gone.plugin:d", "update:9.9.9"], [.. center.Items.Select(i => i.Id)], SequenceOrder.InAnyOrder, "前缀带冒号:acme.backup 不会顺手删掉 acme.backup2 的");
         Assert.IsFalse(await service.IsMutedAsync(PluginId), "重装之后从头来过");
         Assert.IsFalse(service.HasMessages(PluginId));
 
         await service.SweepUninstalledAsync(new HashSet<string>(StringComparer.Ordinal) { "acme.backup2" });
 
-        Assert.AreSequenceEqual(["plugin:acme.backup2:c", "update:9.9.9"], [.. center.Items.Select(i => i.Id)], Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
+        Assert.AreSequenceEqual(["plugin:acme.backup2:c", "update:9.9.9"], [.. center.Items.Select(i => i.Id)], SequenceOrder.InAnyOrder);
     }
 
     /// <summary>
