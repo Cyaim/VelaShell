@@ -58,6 +58,8 @@ public sealed class SettingsTransferTests
 
         JsonObject root = JsonNode.Parse(json)!.AsObject();
         Assert.IsFalse(root["appearance"]!.AsObject().ContainsKey("lastWindowWidth"), "窗口尺寸是运行状态,不是设置");
+        Assert.IsFalse(root["appearance"]!.AsObject().ContainsKey("aiPanelWidth"));
+        Assert.IsFalse(root["appearance"]!.AsObject().ContainsKey("aiPanelPinned"));
         Assert.IsFalse(root["general"]!.AsObject().ContainsKey("lastOpenProfileIds"));
         Assert.IsTrue(root["security"]!.AsObject().ContainsKey("recordingOptInMigrated"), "迁移标记要带着,否则导入时会再迁移一遍");
         Assert.AreEqual(ProxyPassword, settings.Proxy.Password, "抹的应是副本");
@@ -92,13 +94,17 @@ public sealed class SettingsTransferTests
         AppSettings source = Configured();
         source.Appearance.LastWindowWidth = 640;
         // 手写的文件(或别的工具写的)里也可能带着窗口尺寸:照样不采用。
-        string json = JsonSerializer.Serialize(new { appearance = new { lastWindowWidth = 640, uiFontSize = 15 } });
+        string json = JsonSerializer.Serialize(new { appearance = new { lastWindowWidth = 640, uiFontSize = 15, aiPanelWidth = 480, aiPanelPinned = true } });
         var local = new AppSettings();
         local.Appearance.LastWindowWidth = 1600;
+        local.Appearance.AiPanelWidth = 540;
+        local.Appearance.AiPanelPinned = false;
 
         SettingsImportMerge merge = SettingsTransfer.Merge(local, SettingsTransfer.Parse(json)!, AllIds);
 
         Assert.AreEqual(1600, merge.Settings.Appearance.LastWindowWidth);
+        Assert.AreEqual(540, merge.Settings.Appearance.AiPanelWidth);
+        Assert.IsFalse(merge.Settings.Appearance.AiPanelPinned);
         Assert.AreEqual(15, merge.Settings.Appearance.UiFontSize);
     }
 

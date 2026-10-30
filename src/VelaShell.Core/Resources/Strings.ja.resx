@@ -9756,4 +9756,7 @@ Windows は exe のフルパスまたはコマンド名(例: notepad)、Linux �
   <data name="Relay_CacheFailed" xml:space="preserve">
     <value>ローカル転送キャッシュにアクセスできません。ディスクの空き容量と一時ディレクトリのアクセス権を確認してから再試行してください。</value>
   </data>
+  <data name="AiRegion_Pin" xml:space="preserve"><value>AI アシスタントを固定 / 自動的に隠す</value></data>
+  <data name="AiRegion_Collapse" xml:space="preserve"><value>AI アシスタントを折りたたむ（会話を保持）</value></data>
+  <data name="AiRegion_Hide" xml:space="preserve"><value>AI アシスタントを非表示</value></data>
 </root>

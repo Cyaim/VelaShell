@@ -109,6 +109,8 @@ public sealed class SettingsCategoriesTests
         var after = new AppSettings();
         after.Appearance.LastWindowWidth = 1600;
         after.Appearance.LastWindowX = 20;
+        after.Appearance.AiPanelWidth = 540;
+        after.Appearance.AiPanelPinned = false;
         after.General.LastOpenProfileIds = [Guid.NewGuid()];
         after.Security.RecordingOptInMigrated = true;
         after.Proxy.DefaultsMigrated = true;

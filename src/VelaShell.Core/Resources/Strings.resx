@@ -9761,4 +9761,7 @@ Send anyway?</value>
   <data name="Relay_CacheFailed" xml:space="preserve">
     <value>Unable to access the local transfer cache. Check free disk space and temporary-directory permissions before retrying.</value>
   </data>
+  <data name="AiRegion_Pin" xml:space="preserve"><value>Pin / auto-hide AI assistant</value></data>
+  <data name="AiRegion_Collapse" xml:space="preserve"><value>Collapse AI assistant (keep conversation)</value></data>
+  <data name="AiRegion_Hide" xml:space="preserve"><value>Hide AI assistant</value></data>
 </root>

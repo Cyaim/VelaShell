@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using VelaShell.Plugin.Ai.Configuration;
@@ -7,14 +8,7 @@ using VelaShell.PluginSdk.Ui;
 
 namespace VelaShell.Plugin.Ai.Tests;
 
-/// <summary>
-/// 侧栏宽度:没有设置项,由用户拖分割条决定 —— 拖完记下来,下次打开还是那个宽度。
-/// </summary>
-/// <remarks>
-/// 让人去设置页填一个百分比,不如直接把他拖出来的结果记住(用户要求)。
-/// 宿主在拖动<b>结束</b>时通知一次(<see cref="IPluginPanel.PlacementRatioChanged" />),
-/// 所以不必防抖。
-/// </remarks>
+/// <summary>AI 的呈现宽度归宿主管理,插件只负责内容和重复打开的生命周期。</summary>
 [TestClass]
 [TestCategory("Plugins")]
 public sealed class PanelWidthMemoryTests
@@ -35,7 +29,7 @@ public sealed class PanelWidthMemoryTests
 
     private static Task PumpAsync(int rounds = 40) => HeadlessPump.RunAsync(rounds);
 
-    /// <summary>激活插件、跑"打开聊天(标签页)"命令,并把面板真的挂进窗口。</summary>
+    /// <summary>激活插件、跑"打开助手"命令,并把面板真的挂进窗口。</summary>
     private static async Task<(FakePanel Panel, ChatPanelView View, Window Window)> OpenChatAsync(TestPluginContext context)
     {
         // 和真实宿主一样立刻造内容:插件就是在工厂里拿到那个视图引用的,
@@ -76,87 +70,7 @@ public sealed class PanelWidthMemoryTests
     }
 
     [TestMethod]
-    public void DefaultsTo30Percent()
-    {
-        OnUi(async () =>
-        {
-            using var context = new TestPluginContext();
-            (FakePanel panel, ChatPanelView view, Window window) = await OpenChatAsync(context);
-            try
-            {
-                Assert.AreEqual(0.30, panel.Options.PlacementRatio, 0.001, "没拖过就是默认的 30%");
-            }
-            finally
-            {
-                view.Detach();
-                window.Close();
-            }
-        });
-    }
-
-    /// <summary>
-    /// 拖完记住,而且<b>扛得住面板后续的整体保存</b>。
-    /// </summary>
-    /// <remarks>
-    /// 这是真正踩过的坑:一开始是绕过面板 Load-改-Save 直接写库,面板内存里还揣着旧宽度,
-    /// 下一次换模式/勾工具就把它整体覆盖回去了 —— 用户看到的就是"拖了不算数,重开还是老样子"。
-    /// 所以这里在"拖动"之后额外触发一次面板自己的保存,再验值还在。
-    /// </remarks>
-    [TestMethod]
-    public void RemembersTheDraggedWidth_EvenAfterThePanelSavesItsOwnSettings()
-    {
-        OnUi(async () =>
-        {
-            using var context = new TestPluginContext();
-            (FakePanel panel, ChatPanelView view, Window window) = await OpenChatAsync(context);
-            try
-            {
-                panel.RaisePlacementRatioChanged(0.42);
-                await PumpAsync();
-
-                // 面板自己的一次整体保存(换对话模式就会走这条路)
-                view.GetControl<ComboBox>("ModeCombo").SelectedIndex = (int)ChatMode.Agent;
-                await PumpAsync();
-
-                AiSettings saved = await new AiSettingsStore(context).LoadAsync();
-                Assert.AreEqual(42, saved.PanelWidthPercent, "拖出来的宽度不能被面板的整体保存盖掉");
-                Assert.AreEqual(ChatMode.Agent, saved.Mode, "同一次保存里模式也要落下去");
-            }
-            finally
-            {
-                view.Detach();
-                window.Close();
-            }
-        });
-    }
-
-    /// <summary>拖到极端位置也得落在宿主认的区间里,否则下次打开会被夹一次、看着像"没记住"。</summary>
-    [TestMethod]
-    public void ClampsToTheRangeTheHostAccepts()
-    {
-        OnUi(async () =>
-        {
-            using var context = new TestPluginContext();
-            (FakePanel panel, ChatPanelView view, Window window) = await OpenChatAsync(context);
-            try
-            {
-                panel.RaisePlacementRatioChanged(0.93);
-                await PumpAsync();
-
-                AiSettings saved = await new AiSettingsStore(context).LoadAsync();
-                Assert.AreEqual(85, saved.PanelWidthPercent);
-            }
-            finally
-            {
-                view.Detach();
-                window.Close();
-            }
-        });
-    }
-
-    /// <summary>下一次打开用的就是记住的那个宽度。</summary>
-    [TestMethod]
-    public void ReopeningUsesTheRememberedWidth()
+    public void LegacyPluginWidth_IsNeitherAppliedNorUpdatedByTheAiPlugin()
     {
         OnUi(async () =>
         {
@@ -165,13 +79,74 @@ public sealed class PanelWidthMemoryTests
             (FakePanel panel, ChatPanelView view, Window window) = await OpenChatAsync(context);
             try
             {
-                Assert.AreEqual(0.55, panel.Options.PlacementRatio, 0.001);
+                Assert.AreNotEqual(0.55, panel.Options.PlacementRatio, "旧的插件百分比不再控制专属区");
+                panel.RaisePlacementRatioChanged(0.42);
+                view.GetControl<ComboBox>("ModeCombo").SelectedIndex = (int)ChatMode.Agent;
+                await PumpAsync();
+                AiSettings saved = await new AiSettingsStore(context).LoadAsync();
+                Assert.AreEqual(55, saved.PanelWidthPercent, "宽度通知不得再写插件设置");
+                Assert.AreEqual(ChatMode.Agent, saved.Mode);
             }
-            finally
+            finally { view.Detach(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void WindowAndDedicatedRegion_HaveIndependentReusableHandles()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            (FakePanel panel, ChatPanelView view, Window window) = await OpenChatAsync(context);
+            ChatPanelView? windowView = null;
+            try
             {
-                view.Detach();
-                window.Close();
+                await context.RecordingCommands.RunAsync($"{context.PluginId}.chat-window");
+                FakePanel separate = context.FakeUi.LastPanel;
+                windowView = (ChatPanelView)separate.CreateContent();
+                Assert.AreEqual(PanelDisplayMode.Window, separate.Options.DisplayMode);
+                Assert.AreNotSame(view, windowView);
+                await Task.WhenAll(Enumerable.Range(0, 3).Select(_ => context.RecordingCommands.RunAsync($"{context.PluginId}.chat")));
+                Assert.HasCount(2, context.FakeUi.Panels);
+                Assert.AreEqual(3, panel.ActivateCount);
+                Assert.AreEqual(0, separate.ActivateCount);
             }
+            finally { windowView?.Detach(); view.Detach(); window.Close(); }
+        });
+    }
+
+    [TestMethod]
+    public void NarrowPanel_LongServerNameKeepsAllTopBarActionsInsideThePanel()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            (FakePanel _, ChatPanelView view, Window window) = await OpenChatAsync(context);
+            try
+            {
+                ComboBox combo = view.GetControl<ComboBox>("SessionCombo");
+                combo.ItemsSource = new[] { new SessionNavItem(new string('W', 180), null!) };
+                combo.SelectedIndex = 0;
+                foreach (double width in new[] { 800d, 300d })
+                {
+                    window.Width = width;
+                    window.UpdateLayout();
+                    await PumpAsync();
+                    Assert.AreEqual(0, combo.TranslatePoint(default, view.GetControl<Grid>("TopBar"))!.Value.X, 0.1,
+                        "服务器选择框在宽窄面板内均应贴左");
+                }
+                window.UpdateLayout();
+                await PumpAsync();
+                foreach (string name in new[] { "HistoryToggle", "NewChatButton", "ToolsButton", "SettingsButton" })
+                {
+                    Control button = view.GetControl<Control>(name);
+                    var position = button.TranslatePoint(default, view)!.Value;
+                    Assert.IsTrue(position.X >= 0 && position.X + button.Bounds.Width <= view.Bounds.Width,
+                        $"{name} 不得被长服务器名称挤出面板");
+                }
+                Assert.IsTrue(combo.Bounds.Width < 180);
+            }
+            finally { view.Detach(); window.Close(); }
         });
     }
 }

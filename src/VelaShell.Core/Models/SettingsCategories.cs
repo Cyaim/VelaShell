@@ -119,6 +119,8 @@ public static class SettingsCategories
         ("appearance", "lastWindowMaximized"),
         ("appearance", "lastWindowX"),
         ("appearance", "lastWindowY"),
+        ("appearance", "aiPanelWidth"),
+        ("appearance", "aiPanelPinned"),
     ];
 
     /// <summary>

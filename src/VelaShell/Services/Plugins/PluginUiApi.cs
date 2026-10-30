@@ -64,7 +64,10 @@ internal sealed class PluginUiApi(
             {
                 MainWindowViewModel viewModel = mainViewModel()
                     ?? throw new InvalidOperationException("Host main window is not ready; cannot open a docked panel.");
-                return new PluginPanel(pluginId, log, options, content, viewModel.Layout);
+                // 第一方 AI 的文档请求由宿主放进专属区;通用插件仍使用文档停靠契约。
+                return pluginId == "velashell.ai"
+                    ? new PluginPanel(pluginId, log, options, content, viewModel.AiAssistant)
+                    : new PluginPanel(pluginId, log, options, content, viewModel.Layout);
             }
             return new PluginPanel(pluginId, log, options, content, MainWindow());
         });

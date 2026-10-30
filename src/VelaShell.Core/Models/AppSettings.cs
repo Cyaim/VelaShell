@@ -623,6 +623,20 @@ public class AppearanceOptions : ObservableOptions
         set => Set(ref field, value);
     } = "left";
 
+    /// <summary>AI 专属区的首选宽度,由宿主布局记忆。</summary>
+    public double AiPanelWidth
+    {
+        get;
+        set => Set(ref field, value);
+    } = 380;
+
+    /// <summary>AI 专属区是否固定占用布局宽度。</summary>
+    public bool AiPanelPinned
+    {
+        get;
+        set => Set(ref field, value);
+    } = true;
+
     /// <summary>是否在左侧栏显示快捷命令面板;默认隐藏。</summary>
     public bool ShowQuickCommandsPanel
     {
