@@ -1694,6 +1694,9 @@
   <data name="Main_TerminalExported" xml:space="preserve">
     <value>터미널 출력을 내보냈습니다: {0}</value>
   </data>
+  <data name="Menu_AiAssistantTip" xml:space="preserve">
+    <value>AI 도우미</value>
+  </data>
   <data name="Menu_CommandPaletteTip" xml:space="preserve">
     <value>명령 팔레트 (Ctrl+P)</value>
   </data>

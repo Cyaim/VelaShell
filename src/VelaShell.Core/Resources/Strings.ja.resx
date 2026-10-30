@@ -1694,6 +1694,9 @@
   <data name="Main_TerminalExported" xml:space="preserve">
     <value>ターミナル出力をエクスポートしました:{0}</value>
   </data>
+  <data name="Menu_AiAssistantTip" xml:space="preserve">
+    <value>AI アシスタント</value>
+  </data>
   <data name="Menu_CommandPaletteTip" xml:space="preserve">
     <value>コマンドパレット (Ctrl+P)</value>
   </data>

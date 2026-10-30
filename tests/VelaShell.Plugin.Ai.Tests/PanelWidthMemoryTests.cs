@@ -53,6 +53,29 @@ public sealed class PanelWidthMemoryTests
     }
 
     [TestMethod]
+    public void OpeningChatAgain_ActivatesTheExistingPanel()
+    {
+        OnUi(async () =>
+        {
+            using var context = new TestPluginContext();
+            (FakePanel panel, ChatPanelView view, Window window) = await OpenChatAsync(context);
+            try
+            {
+                await context.RecordingCommands.RunAsync($"{context.PluginId}.chat");
+
+                Assert.AreEqual(1, context.FakeUi.Panels.Count);
+                Assert.AreSame(panel, context.FakeUi.LastPanel);
+                Assert.AreEqual(1, panel.ActivateCount);
+            }
+            finally
+            {
+                view.Detach();
+                window.Close();
+            }
+        });
+    }
+
+    [TestMethod]
     public void DefaultsTo30Percent()
     {
         OnUi(async () =>

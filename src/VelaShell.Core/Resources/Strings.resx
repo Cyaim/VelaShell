@@ -2184,6 +2184,9 @@ Paste anyway?</value>
   <data name="Main_TerminalExported" xml:space="preserve">
     <value>Terminal output exported: {0}</value>
   </data>
+  <data name="Menu_AiAssistantTip" xml:space="preserve">
+    <value>AI Assistant</value>
+  </data>
   <data name="Menu_CommandPaletteTip" xml:space="preserve">
     <value>Command Palette (Ctrl+P)</value>
   </data>
