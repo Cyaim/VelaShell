@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.VisualTree;
 using VelaShell.Plugin.Ai.Configuration;
 using VelaShell.Plugin.Ai.Ui;
 using VelaShell.PluginSdk.Testing;
@@ -40,18 +41,26 @@ public sealed partial class ChatPanelViewUiTests
     }
 
     [TestMethod]
-    public void ReasoningPicker_StartsOnTheLevelTheModelIsConfiguredWith()
+    [DataRow(ReasoningLevel.High)]
+    [DataRow(ReasoningLevel.ExtraHigh)]
+    [DataRow(ReasoningLevel.Max)]
+    public void ReasoningPicker_StartsOnTheLevelTheModelIsConfiguredWith(ReasoningLevel level)
     {
         OnUi(async () =>
         {
             using var context = new TestPluginContext();
             (Window window, ChatPanelView panel, ComboBox combo) =
-                await WithReasoningPickerAsync(context, TwoModels(ReasoningLevel.High, ReasoningLevel.Default));
+                await WithReasoningPickerAsync(context, TwoModels(level, ReasoningLevel.Default));
             try
             {
-                // 枚举值就是索引(Default/Off/Low/Medium/High)
-                Assert.AreEqual((int)ReasoningLevel.High, combo.SelectedIndex);
-                Assert.HasCount(5, combo.ItemsSource!);
+                Assert.AreEqual((int)level, combo.SelectedIndex);
+                Assert.Contains(new Loc("en")[level switch
+                {
+                    ReasoningLevel.ExtraHigh => "ReasoningExtraHigh",
+                    ReasoningLevel.Max => "ReasoningMax",
+                    _ => "ReasoningHigh"
+                }], Find<TextBlock>(panel, "ReasoningSummary").Text!);
+                Assert.HasCount(7, combo.ItemsSource!);
             }
             finally
             {
@@ -66,7 +75,10 @@ public sealed partial class ChatPanelViewUiTests
     /// 写回去的话,下次打开设置页会发现档位莫名其妙换了,而用户根本不记得动过设置。
     /// </summary>
     [TestMethod]
-    public void PickingALevel_DoesNotWriteBackToTheSavedModelSetting()
+    [DataRow(ReasoningLevel.Low)]
+    [DataRow(ReasoningLevel.ExtraHigh)]
+    [DataRow(ReasoningLevel.Max)]
+    public void PickingALevel_DoesNotWriteBackToTheSavedModelSetting(ReasoningLevel level)
     {
         OnUi(async () =>
         {
@@ -76,13 +88,13 @@ public sealed partial class ChatPanelViewUiTests
                 await WithReasoningPickerAsync(context, TwoModels(ReasoningLevel.High, ReasoningLevel.Default));
             try
             {
-                combo.SelectedIndex = (int)ReasoningLevel.Low;
+                combo.SelectedIndex = (int)level;
                 await PumpAsync(10);
 
                 AiSettings saved = await store.LoadAsync();
                 Assert.AreEqual(ReasoningLevel.High, saved.Providers[0].Models[0].Reasoning,
                     "工具条上的选择是临时的,不该改动保存的配置");
-                Assert.AreEqual((int)ReasoningLevel.Low, combo.SelectedIndex, "但界面上得停在选中的那一档");
+                Assert.AreEqual((int)level, combo.SelectedIndex, "但界面上得停在选中的那一档");
             }
             finally
             {
@@ -126,11 +138,10 @@ public sealed partial class ChatPanelViewUiTests
     }
 
     /// <summary>
-    /// 档位下拉要<b>紧挨着</b>模型选择器 —— 它改的正是"这个模型这一问想多深",
-    /// 中间隔一段空白就读成了两件不相干的设置。空档要排在两者之后。
+    /// 思考档位留在模型弹层中,页脚只显示当前模型和档位摘要。
     /// </summary>
     [TestMethod]
-    public void ReasoningPicker_SitsRightNextToTheModelPicker()
+    public void ReasoningPicker_IsInsideTheModelPopup()
     {
         OnUi(async () =>
         {
@@ -139,15 +150,12 @@ public sealed partial class ChatPanelViewUiTests
                 await WithReasoningPickerAsync(context, TwoModels(ReasoningLevel.Default, ReasoningLevel.Default));
             try
             {
-                ComboBox model = Find<ComboBox>(panel, "ProviderCombo");
-                Assert.AreEqual(Grid.GetColumn(model) + 1, Grid.GetColumn(combo), "就在模型那一列的右边一列");
-
-                Grid toolbar = Find<Grid>(panel, "InputToolbar");
-                Assert.AreEqual(GridUnitType.Auto, toolbar.ColumnDefinitions[Grid.GetColumn(model)].Width.GridUnitType,
-                    "模型那列若是 *,下拉会被推到星号列的最右端,中间空一大段");
+                Border popupBody = Find<Border>(panel, "ModelPopupBody");
+                Assert.IsTrue(combo.GetVisualAncestors().Contains(popupBody),
+                    "思考档位在模型弹层内,不再单独占工具条宽度");
+                Grid modelControls = (Grid)Find<Button>(panel, "ModelButton").Parent!;
                 Assert.AreEqual(GridUnitType.Star,
-                    toolbar.ColumnDefinitions[Grid.GetColumn(combo) + 1].Width.GridUnitType,
-                    "空档排在两者之后 —— 收窄时先吃空白,而不是把发送按钮挤出去");
+                    modelControls.ColumnDefinitions[Grid.GetColumn(Find<Button>(panel, "ModelButton"))].Width.GridUnitType);
             }
             finally
             {
@@ -158,7 +166,7 @@ public sealed partial class ChatPanelViewUiTests
     }
 
     /// <summary>
-    /// 没改过档时<b>一个外观属性都不该设</b>。
+    /// 缺少宿主主题时仍能读出档位,临时修改只通过样式类标记。
     /// </summary>
     /// <remarks>
     /// 这条是真机上撞出来的:原先在代码里 <c>FindResource</c> 取色写到控件上,
@@ -166,7 +174,7 @@ public sealed partial class ChatPanelViewUiTests
     /// 那时取回 null,前景色被设成 null,文字整个消失,下拉只剩一个箭头。
     /// </remarks>
     [TestMethod]
-    public void ReasoningPicker_Unchanged_LooksExactlyLikeTheModelPicker()
+    public void ReasoningPicker_WithoutHostTheme_RetainsReadableTextAndOverrideClass()
     {
         OnUi(async () =>
         {
@@ -175,15 +183,17 @@ public sealed partial class ChatPanelViewUiTests
                 await WithReasoningPickerAsync(context, TwoModels(ReasoningLevel.Default, ReasoningLevel.Default));
             try
             {
-                ComboBox model = Find<ComboBox>(panel, "ProviderCombo");
-                Assert.AreEqual(model.Foreground, combo.Foreground, "前景色不该被代码写过 —— 写成 null 就没字了");
-                Assert.AreEqual(model.Background, combo.Background);
-                Assert.AreEqual(model.BorderBrush, combo.BorderBrush);
+                Assert.IsNotNull(combo.Foreground, "未加载宿主主题时仍须保留可见文字");
                 Assert.DoesNotContain("overridden", combo.Classes);
+                panel.Resources["VelaAccentDim"] = Avalonia.Media.Brushes.CornflowerBlue;
+                Button modelButton = Find<Button>(panel, "ModelButton");
+                var modelBackground = modelButton.Background;
 
                 combo.SelectedIndex = (int)ReasoningLevel.High;
                 await PumpAsync(10);
-                Assert.Contains("overridden", combo.Classes, "改过档才点亮,而且只经样式类,不写属性");
+                Assert.Contains("overridden", combo.Classes, "思考选择框保留临时覆盖标记");
+                Assert.AreEqual(modelBackground, modelButton.Background,
+                    "调整思考强度不应高亮模型入口");
             }
             finally
             {
@@ -209,7 +219,7 @@ public sealed partial class ChatPanelViewUiTests
             {
                 Assert.IsFalse(combo.IsEnabled);
 
-                Find<ComboBox>(panel, "ProviderCombo").SelectedIndex = 1;
+                Find<ListBox>(panel, "ProviderList").SelectedIndex = 1;
                 await PumpAsync(10);
                 Assert.IsTrue(combo.IsEnabled, "换到会思考的模型就该放开");
             }
@@ -264,7 +274,7 @@ public sealed partial class ChatPanelViewUiTests
                 combo.SelectedIndex = (int)ReasoningLevel.High;
                 await PumpAsync(10);
 
-                Find<ComboBox>(panel, "ProviderCombo").SelectedIndex = 1;
+                Find<ListBox>(panel, "ProviderList").SelectedIndex = 1;
                 await PumpAsync(10);
 
                 Assert.AreEqual((int)ReasoningLevel.Off, combo.SelectedIndex,
@@ -353,7 +363,7 @@ public sealed partial class ChatPanelViewUiTests
                 await PumpAsync(10);
                 FindIn<ListBox>(editor, "ProvidersList").SelectedIndex = 0;
                 RaiseClick(FindIn<Button>(editor, "AddModelButton"));
-                Assert.IsTrue(await WaitForAsync(() => Find<ComboBox>(panel, "ProviderCombo").SelectedIndex == 0));
+                Assert.IsTrue(await WaitForAsync(() => Find<ListBox>(panel, "ProviderList").SelectedIndex == 0));
                 Assert.AreEqual((int)ReasoningLevel.Default, tier.SelectedIndex,
                     "首个模型有自己的默认档，之前空选择的 High 不可继承");
                 Assert.DoesNotContain("overridden", tier.Classes);

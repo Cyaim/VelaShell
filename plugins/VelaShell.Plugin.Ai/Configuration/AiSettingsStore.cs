@@ -1856,11 +1856,35 @@ public sealed class AiSettingsStore(IPluginContext context)
                 {
                     ReasoningLevel.Low => ReasoningEffort.Low,
                     ReasoningLevel.High => ReasoningEffort.High,
+                    ReasoningLevel.ExtraHigh or ReasoningLevel.Max => ReasoningEffort.ExtraHigh,
                     _ => ReasoningEffort.Medium
                 },
                 // 要的就是把思考过程显示出来,能给全文就别只给摘要
                 Output = ReasoningOutput.Full
             };
+
+        // 通用抽象最高只有 ExtraHigh;max 必须交给 OpenAI 的原生请求,避免降成 xhigh。
+        if (provider.Reasoning == ReasoningLevel.Max && provider.Protocol is
+            ChatProtocol.OpenAiChatCompletions or ChatProtocol.OpenAiResponses)
+        {
+            options.Reasoning = null;
+#pragma warning disable OPENAI001
+            options.RawRepresentationFactory = provider.Protocol == ChatProtocol.OpenAiResponses
+                ? _ => new OpenAI.Responses.CreateResponseOptions
+                {
+                    ReasoningOptions = new OpenAI.Responses.ResponseReasoningOptions
+                    {
+                        ReasoningEffortLevel = OpenAI.Responses.ResponseReasoningEffortLevel.Max,
+                        ReasoningSummaryVerbosity = OpenAI.Responses.ResponseReasoningSummaryVerbosity.Detailed
+                    }
+                }
+                : _ => new OpenAI.Chat.ChatCompletionOptions
+                {
+                    ReasoningEffortLevel = new OpenAI.Chat.ChatReasoningEffortLevel("max")
+                };
+#pragma warning restore OPENAI001
+            return;
+        }
 
         if (provider.Protocol != ChatProtocol.AnthropicMessages)
         {
@@ -1959,9 +1983,13 @@ public sealed class AiSettingsStore(IPluginContext context)
             return;
         }
 #pragma warning disable OPENAI001 // Responses API 在 OpenAI SDK 中标记为实验性
-        options.RawRepresentationFactory = _ => new OpenAI.Responses.CreateResponseOptions
+        var previousFactory = options.RawRepresentationFactory;
+        options.RawRepresentationFactory = client =>
         {
-            StoredOutputEnabled = false
+            var raw = previousFactory?.Invoke(client) as OpenAI.Responses.CreateResponseOptions
+                ?? new OpenAI.Responses.CreateResponseOptions();
+            raw.StoredOutputEnabled = false;
+            return raw;
         };
 #pragma warning restore OPENAI001
     }
@@ -1977,6 +2005,8 @@ public sealed class AiSettingsStore(IPluginContext context)
         {
             ReasoningLevel.Low => 2048,
             ReasoningLevel.High => 16384,
+            ReasoningLevel.ExtraHigh => 32768,
+            ReasoningLevel.Max => 65536,
             _ => 4096
         };
         int budget = Math.Clamp(desired, AnthropicMinThinkingBudget,

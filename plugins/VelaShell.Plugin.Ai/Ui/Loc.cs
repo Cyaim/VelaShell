@@ -297,6 +297,8 @@ public sealed class Loc(string locale)
         ["ReasoningLow"] = ["Low", "低", "低", "低", "낮음"],
         ["ReasoningMedium"] = ["Medium", "中", "中", "中", "보통"],
         ["ReasoningHigh"] = ["High", "高", "高", "高", "높음"],
+        ["ReasoningExtraHigh"] = ["Extra high (xhigh)", "超高 (xhigh)", "超高 (xhigh)", "非常に高い (xhigh)", "매우 높음 (xhigh)"],
+        ["ReasoningMax"] = ["Maximum (max)", "最高 (max)", "最高 (max)", "最大 (max)", "최대 (max)"],
         // 输入框旁边那个下拉用的短形:工具条只有几十像素宽,设置页那句完整说明进不去。
         // 「默认」在这里的含义与设置页的 ReasoningDefault 完全一致(不带 reasoning 参数)
         ["ReasoningAuto"] = ["Auto", "默认", "預設", "既定", "기본"],
