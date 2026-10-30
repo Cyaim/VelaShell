@@ -67,14 +67,15 @@ public sealed class RemoteEditDraftsTests
             // macOS 的 FSEvents 可能在启用 watcher 后才投递初始创建事件;等这批保守回传落地再检查标记。
             await WaitUntilAsync(() => !session.HasPendingChange && session.State == RemoteEditState.Watching
                 && RemoteEditDrafts.ListDrafts(_root).Count == 0);
-            Assert.IsEmpty(RemoteEditDrafts.ListDrafts(_root), "初始副本已与远端一致,不是草稿");
 
             int beforeEdit = Volatile.Read(ref uploads);
             await File.WriteAllTextAsync(localPath, "edited once");
+            RemoteEditMarker? uploaded = null;
             await WaitUntilAsync(() => Volatile.Read(ref uploads) > beforeEdit && !session.HasPendingChange
-                && session.State == RemoteEditState.Watching && RemoteEditDrafts.Read(directory)?.State == RemoteEditDrafts.Clean);
-            Assert.AreEqual(RemoteEditDrafts.Clean, RemoteEditDrafts.Read(directory)?.State, "传上去之后变回干净");
-            Assert.AreEqual(new FileInfo(localPath).LastWriteTimeUtc, RemoteEditDrafts.Read(directory)?.LastWriteUtc,
+                && session.State == RemoteEditState.Watching && (uploaded = RemoteEditDrafts.Read(directory))?.State == RemoteEditDrafts.Clean
+                && uploaded.LastWriteUtc == new FileInfo(localPath).LastWriteTimeUtc);
+            Assert.AreEqual(RemoteEditDrafts.Clean, uploaded?.State, "传上去之后变回干净");
+            Assert.AreEqual(new FileInfo(localPath).LastWriteTimeUtc, uploaded?.LastWriteUtc,
                 "干净标记记的是传上去的那一份");
 
             fail = true;
@@ -214,12 +215,16 @@ public sealed class RemoteEditDraftsTests
         Directory.SetLastWriteTimeUtc(directory, when);
     }
 
-    private static async Task WaitUntilAsync(Func<bool> condition)
+    private static async Task WaitUntilAsync(Func<bool> condition,
+        [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(condition))] string? expression = null)
     {
-        for (int i = 0; i < 2_000 && !condition(); i++)
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        while (elapsed.Elapsed < TimeSpan.FromSeconds(10))
         {
+            // 文件事件随时会让状态再次变脏;观察到满足条件就返回,不要在循环外重新取样。
+            if (condition()) return;
             await Task.Delay(5);
         }
-        Assert.IsTrue(condition(), "等了 10 秒,编辑会话还没走到预期的处境");
+        Assert.Fail($"等了 10 秒,编辑会话还没走到预期的处境: {expression}");
     }
 }
