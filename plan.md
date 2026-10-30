@@ -3241,9 +3241,9 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 
 **边界**：只在 headless 下渲染与截图，未在真实应用里操作过；未运行 Linux / macOS 与完整解决方案测试。五张卡片暂时共用工作台图标；「数据库 / SSL」等插件自定义页要等 SDK 发版后接入。
 
-## 287. 2026-10-30 连接对话框：SDK 抬到 2.1.5，接上插件自定义分页与变体图标
+## 293. 2026-10-30 连接对话框：SDK 抬到 2.1.5，接上插件自定义分页与变体图标
 
-**起因**：§286 的分页机制与类型卡片都已就位，但两个 `From()` 不填分页、卡片共用工作台图标，因为 velashell-plugin-sdk 的对应契约当时还没发版。SDK 2.1.5 已发布到 nuget.org，带着这四个成员：`ProtocolSettingPage(Key, Label)`、`ProtocolSettingField.Page`、`WorkspaceDescriptor.Pages`、`WorkspaceVariant.Icon`。
+**起因**：§292 的分页机制与类型卡片都已就位，但两个 `From()` 不填分页、卡片共用工作台图标，因为 velashell-plugin-sdk 的对应契约当时还没发版。SDK 2.1.5 已发布到 nuget.org，带着这四个成员：`ProtocolSettingPage(Key, Label)`、`ProtocolSettingField.Page`、`WorkspaceDescriptor.Pages`、`WorkspaceVariant.Icon`。
 
 **接上了什么**：
 
