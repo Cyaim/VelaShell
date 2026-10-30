@@ -81,11 +81,16 @@ public class LocalXServerSelectorTests
         using System.Net.Sockets.TcpListener listener = new(System.Net.IPAddress.Loopback, 0);
         listener.Start();
         int display = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port - XServerCommandLine.TcpPort(0);
+        // 只绑定不监听,独占保留端口;随机端口的相邻端口不保证无人监听。
+        using System.Net.Sockets.Socket unavailable = new(System.Net.Sockets.AddressFamily.InterNetwork,
+            System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp) { ExclusiveAddressUse = true };
+        unavailable.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 0));
+        int unavailableDisplay = ((System.Net.IPEndPoint)unavailable.LocalEndPoint!).Port - XServerCommandLine.TcpPort(0);
 
         ILocalXServer builtIn = Engine(), vcXsrv = Engine();
         builtIn.State.Returns(XServerState.Running);
         builtIn.ResolveForwardingDisplayAsync(Arg.Any<CancellationToken>()).Returns(new XServerDisplayResolution(
-            "localhost:0.0", Connector: (_, _) => throw new InvalidOperationException("The built-in X server is not running.")));
+            $"localhost:{unavailableDisplay}.0", Connector: (_, _) => throw new InvalidOperationException("The built-in X server is not running.")));
         LocalXServerSelector selector = new(Settings(XServerEngines.BuiltIn), builtIn, vcXsrv);
         XServerDisplayResolution resolution = await selector.ResolveForwardingDisplayAsync();
 
@@ -98,7 +103,11 @@ public class LocalXServerSelectorTests
         Assert.IsTrue(peer.Connected, "连到了此刻在运行的 X 服务端的 6000+N");
 
         vcXsrv.State.Returns(XServerState.Stopped);   // 都没在运行:连解析时的显示地址,连不上按 IOException 报
-        await Assert.ThrowsAsync<IOException>(async () => await LocalXServerSelector.ConnectTcpAsync(display + 1, CancellationToken.None));
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        await Assert.ThrowsAsync<IOException>(async () =>
+        {
+            await using Stream failed = await resolution.Connector!(new XServerChannelSource("user@host:22"), timeout.Token);
+        });
     }
 
     /// <summary>
