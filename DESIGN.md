@@ -359,7 +359,8 @@ Guarded by `DialogButtonStyleTests`.
 - Selected (`.selected`): `VelaBgActive` fill, `VelaAccent` border, icon and name `VelaAccent`, name Medium.
 - Keyboard focus (`:focus-visible`): `VelaAccent` border, 2px (same as `IconPickerField`).
 - No disabled state — a tile is never greyed out. No brush transitions (§6.1: the resting fill is `Transparent`).
-- A click selects; a double click selects and moves on (same as **Next**); Space / Enter on a focused tile selects.
+- A click selects; a double click selects and moves on (same as **Next**). On a focused tile, Enter selects and moves
+  on as well (same as a double click — the tile would otherwise swallow the dialog's default **Next**); Space only selects.
 - Footer: the type step shows **Cancel** (`VelaOutlineButtonTheme`) and **Next** (`VelaAccentPillButtonTheme`,
   `IsDefault`, `Icon.arrow-right`); the endpoint preview on the left is hidden — there is no endpoint yet. The form of a
   new connection puts **Back** (`VelaOutlineButtonTheme`, `Icon.arrow-left`) in front of Test / Save / Connect. All 28

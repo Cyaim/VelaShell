@@ -878,6 +878,81 @@ public sealed class ConnectionProfileViewUiTests
         }
     });
 
+    /// <summary>打开新建对话框、点进数据库页签,停在卡片那一屏;把键盘焦点放到第 <paramref name="index" /> 张卡片上。</summary>
+    private static async Task<(ConnectionProfileViewModel Vm, ConnectionProfileView Window)> OpenCardsWithFocusOnAsync(
+        PluginProtocolRegistry registry, int index)
+    {
+        var vm = new ConnectionProfileViewModel(protocolRegistry: registry) { Host = "10.0.0.9" };
+        var window = new ConnectionProfileView { DataContext = vm };
+        window.Show();
+        await vm.SelectPluginProtocolCommand.Execute(DbId).FirstAsync();
+        Layout(window);
+        Assert.IsTrue(vm.IsPickingType, "前提:停在卡片上。");
+        Button card = TypeTiles(window)[index];
+        Assert.IsTrue(card.Focus(NavigationMethod.Tab), "前提:卡片拿得到键盘焦点。");
+        Layout(window);
+        Assert.IsTrue(card.IsFocused);
+        return (vm, window);
+    }
+
+    /// <summary>
+    /// <b>焦点在卡片上按 Enter = 选中这张并进入下一步</b>(与双击同义)。
+    /// <para>
+    /// 进卡片那一屏时焦点就落在卡片上;卡片是 Button,不拦的话它把 Enter 当一次点击(只选中)吞掉,
+    /// 对话框级的「下一步」(IsDefault)收不到,键盘用户按 Enter 永远停在卡片上。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public Task TypePicker_EnterOnAFocusedCard_SelectsItAndGoesToTheForm() => _session.RunOnUiAsync(async () =>
+    {
+        PluginProtocolRegistry registry = DbRegistry(out IDisposable handle);
+        using (handle)
+        {
+            (ConnectionProfileViewModel vm, ConnectionProfileView window) = await OpenCardsWithFocusOnAsync(registry, 1);
+            try
+            {
+                window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                window.KeyReleaseQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                Layout(window);
+
+                Assert.IsFalse(vm.IsPickingType, "卡片上按 Enter 应选中并进入下一步。");
+                Assert.AreEqual("PostgreSQL", vm.CurrentTypeLabel, "类型是按 Enter 的那张卡。");
+                Assert.AreEqual("PostgreSQL", window.FindControl<TextBlock>("TypeHeaderValue")!.Text);
+                Assert.AreEqual(5432, vm.Port, "端口跟到 PostgreSQL 的默认值。");
+                Assert.IsTrue(window.FindControl<ScrollViewer>("FormScroll")!.IsEffectivelyVisible, "表单回来。");            }
+            finally
+            {
+                window.Close();
+            }
+        }
+    });
+
+    /// <summary><b>焦点在卡片上按 Space 只选中</b>:高亮换过去,仍停在卡片那一屏,类型与端口都没被碰。</summary>
+    [TestMethod]
+    public Task TypePicker_SpaceOnAFocusedCard_OnlySelectsIt() => _session.RunOnUiAsync(async () =>
+    {
+        PluginProtocolRegistry registry = DbRegistry(out IDisposable handle);
+        using (handle)
+        {
+            (ConnectionProfileViewModel vm, ConnectionProfileView window) = await OpenCardsWithFocusOnAsync(registry, 1);
+            try
+            {
+                window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                Layout(window);
+
+                Assert.IsTrue(vm.IsPickingType, "Space 只选中,不离开卡片。");
+                Assert.AreEqual("postgresql", vm.SelectedTypeValue, "选中的是按 Space 的那张卡。");
+                CollectionAssert.AreEqual(new[] { false, true, false }, TileSelection(window), "高亮跟到那张卡。");
+                Assert.AreEqual("MySQL", vm.CurrentTypeLabel, "还没点下一步,类型不变。");
+                Assert.AreEqual(3306, vm.Port, "还没点下一步,端口不动。");            }
+            finally
+            {
+                window.Close();
+            }
+        }
+    });
+
     private static void AssertIndicatorAligned(Border indicator, Button tab)
     {
         // 读基值(过渡目标)而非属性现值:现值在 180ms 滑动期间是动画中间值。

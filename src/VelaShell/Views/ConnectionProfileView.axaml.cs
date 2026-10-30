@@ -56,10 +56,25 @@ public partial class ConnectionProfileView : Window
         // 双击类型卡片 = 选中并下一步。挂在卡片列表上(卡片是模板生成的,逐个挂要跟着集合增删)。
         // 连已处理的也收:卡片内容里哪个控件先把这次双击标成已处理,也不该吞掉「下一步」。
         TypeCardsList.AddHandler(DoubleTappedEvent, OnTypeCardDoubleTapped, handledEventsToo: true);
+        // 卡片上按 Enter = 选中并下一步(与双击同义),Space 仍只选中。走隧道:卡片是 Button,
+        // 冒泡到它自己时它会把 Enter 当一次点击(只选中)并标成已处理,对话框级的「下一步」(IsDefault)就收不到了。
+        TypeCardsList.AddHandler(KeyDownEvent, OnTypeCardKeyDown, RoutingStrategies.Tunnel);
     }
 
     /// <summary>双击卡片:选中它并直接进表单(等于单击 + 「下一步」)。</summary>
-    private void OnTypeCardDoubleTapped(object? sender, TappedEventArgs e)
+    private void OnTypeCardDoubleTapped(object? sender, TappedEventArgs e) => ConfirmTypeCard(e);
+
+    /// <summary>卡片上按 Enter:同双击。其余按键(Space 选中、Tab 换卡)照常交给卡片自己。</summary>
+    private void OnTypeCardKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            ConfirmTypeCard(e);
+        }
+    }
+
+    /// <summary>事件来自某张卡片时,选中它并直接进表单(ConfirmTypeCard);不是来自卡片的不碰。</summary>
+    private void ConfirmTypeCard(RoutedEventArgs e)
     {
         if (DataContext is not ConnectionProfileViewModel viewModel
             || (e.Source as Visual)?.FindAncestorOfType<Button>(includeSelf: true)?.DataContext
@@ -72,7 +87,7 @@ public partial class ConnectionProfileView : Window
     }
 
     /// <summary>
-    /// 进到卡片那一屏时把焦点放到选中的那张上:键盘用户接着就能 Tab / Space 选别的。
+    /// 进到卡片那一屏时把焦点放到选中的那张上:键盘用户接着就能 Tab / Space 选别的,Enter 进下一步。
     /// 不走 Tab 式聚焦 —— 那会挂上 :focus-visible 的描边,鼠标点进来的人看到的是一圈卡住的高亮。
     /// </summary>
     private void FocusSelectedTypeCard()
