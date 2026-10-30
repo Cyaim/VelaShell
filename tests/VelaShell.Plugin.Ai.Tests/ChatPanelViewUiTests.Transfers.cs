@@ -161,6 +161,8 @@ public sealed partial class ChatPanelViewUiTests
             Assert.IsEmpty(other.Children, "进度不得写入切换后的当前消息容器");
             wait.TrySetResult(end);
             scope.Publish(new("owner", "run", "t", "", "", null, true));
+            // 撤权尚未刷到 UI 时,后台观察者仍可能投递已经取得的完成快照。
+            scope.Publish(new("owner", "run", "t", "source", "/target", end));
             string withheld = new Loc("en")["TransferWithheld"];
             await HeadlessPump.UntilAsync(() => upload.Root.GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == withheld)
                 && status.Root.GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == withheld));
