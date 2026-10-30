@@ -47,13 +47,14 @@ public sealed class WorkspaceVariantCredentialTests
                     Label = "数据库类型",
                     Kind = ProtocolSettingKind.Choice,
                     DefaultValue = "mysql",
-                    Choices = [new("mysql", "MySQL"), new("sqlite", "SQLite")]
+                    Choices = [new("mysql", "MySQL"), new("postgresql", "PostgreSQL"), new("sqlite", "SQLite")]
                 }
             ],
             VariantKey = DialectKey,
             Variants =
             [
                 new() { Value = "mysql", DefaultPort = 3306 },
+                new() { Value = "postgresql", DefaultPort = 5432 },
                 new()
                 {
                     Value = "sqlite",
@@ -154,6 +155,38 @@ public sealed class WorkspaceVariantCredentialTests
             await LoadedAsync(vm);
 
             Assert.AreEqual(13306, vm.Port, "已存的端口被变体的默认值盖掉了。");
+        }
+    }
+
+    /// <summary>
+    /// <b>已存的端口恰好是另一档的默认端口时,装载照样不能跟随。</b>
+    /// <para>
+    /// 13306 不是任何默认端口,"用户手填过"那条判定本来就会护住它,测不出装载这一路跟没跟随。
+    /// 3306 不同:它是 MySQL 那一档的默认端口,判定会把它当成"没手填过"。装载时若让端口跟随,
+    /// 一条存好的 PostgreSQL@3306 配置每打开一次就被改成 5432。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task ExistingProfile_LoadingTheVariant_KeepsASavedPortThatIsAnotherVariantsDefault()
+    {
+        PluginProtocolRegistry registry = Registry(out IDisposable handle);
+        using (handle)
+        {
+            var existing = new SessionProfile
+            {
+                Name = "PG 跑在 3306",
+                ConnectionType = ConnectionType.Plugin,
+                PluginProtocolId = WorkspaceId,
+                Host = "127.0.0.1",
+                Port = 3306,
+                Username = "postgres",
+                PluginSettings = new(StringComparer.Ordinal) { [DialectKey] = "postgresql" }
+            };
+
+            var vm = new ConnectionProfileViewModel(existing, protocolRegistry: registry);
+            await LoadedAsync(vm);
+
+            Assert.AreEqual(3306, vm.Port, "装载时端口跟随了变体默认值(5432),已存的 3306 被盖掉了。");
         }
     }
 
