@@ -3465,7 +3465,7 @@ public sealed partial class SettingsViewUiTests
             var panel = new ChatPanelView(context, store);
             var chatWindow = new Window { Width = 800, Height = 600, Content = panel };
             chatWindow.Show();
-            await WaitUntilAsync(() => panel.GetControl<ComboBox>("ProviderCombo").SelectedIndex >= 0);
+            await WaitUntilAsync(() => panel.GetControl<ListBox>("ProviderList").SelectedIndex >= 0);
             var health = (ProviderHealth)(typeof(ChatPanelView)
                 .GetField("_health", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
                 ?? throw new InvalidOperationException("ChatPanelView health record is gone"))
@@ -4348,7 +4348,10 @@ public sealed partial class SettingsViewUiTests
     }
 
     [TestMethod]
-    public void ModelProbe_UsesDraftReasoningAndOnlyCoolsMatchingSavedReasoning()
+    [DataRow(ReasoningLevel.Low, "low")]
+    [DataRow(ReasoningLevel.ExtraHigh, "xhigh")]
+    [DataRow(ReasoningLevel.Max, "max")]
+    public void ModelProbe_UsesDraftReasoningAndOnlyCoolsMatchingSavedReasoning(ReasoningLevel level, string effort)
     {
         OnUi(async () =>
         {
@@ -4372,26 +4375,27 @@ public sealed partial class SettingsViewUiTests
             await PumpAsync();
             try
             {
-                view.GetControl<ComboBox>("ReasoningCombo").SelectedIndex = (int)ReasoningLevel.Low;
+                view.GetControl<ComboBox>("ReasoningCombo").SelectedIndex = (int)level;
                 Task draftProbe = StartTestAsync(view);
                 string firstRequest = await endpoint.RequestBodyAsync.WaitAsync(TimeSpan.FromSeconds(15));
-                Assert.Contains("\"reasoning_effort\":\"low\"", firstRequest,
+                Assert.Contains($"\"reasoning_effort\":\"{effort}\"", firstRequest,
                     "手动探活发送的是当前未保存档位,不是已保存的 High");
                 Assert.IsFalse(draftProbe.IsCompleted);
                 endpoint.Release();
                 await draftProbe.WaitAsync(TimeSpan.FromSeconds(15));
                 Assert.HasCount(2, endpoint.Requests, "空回复探活必须完成一次补试");
-                Assert.IsFalse(health.IsCooling(model.Id), "草稿 Low 的失败不能冷却仍为 High 的已保存模型");
+                Assert.IsFalse(health.IsCooling(model.Id), "草稿档位的失败不能冷却仍为 High 的已保存模型");
 
                 view.GetControl<Button>("SaveButton")
                     .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
-                await WaitUntilAsync(() => model.Reasoning == ReasoningLevel.Low
+                await WaitUntilAsync(() => model.Reasoning == level
                     && view.GetControl<TextBlock>("StatusText").Text == new Loc("en")["Saved"]);
+                Assert.AreEqual(level, (await store.LoadAsync()).Providers[0].Models[0].Reasoning);
                 Task savedProbe = StartTestAsync(view);
                 await savedProbe.WaitAsync(TimeSpan.FromSeconds(15));
                 Assert.HasCount(4, endpoint.Requests, "保存后的探活也必须完成一次补试");
                 foreach (string request in endpoint.Requests)
-                    Assert.Contains("\"reasoning_effort\":\"low\"", request, "探活及补试都必须固定当前 Low 档位");
+                    Assert.Contains($"\"reasoning_effort\":\"{effort}\"", request, "探活及补试都必须固定当前所选档位");
                 Assert.IsTrue(health.IsCooling(model.Id), "请求档位与落库一致后失败才写入冷却");
             }
             finally { endpoint.Release(); window.Close(); }

@@ -138,7 +138,7 @@ public partial class ChatPanelView : UserControl
     /// </summary>
     /// <remarks>
     /// <b>不落盘,也不写回模型配置</b>:"这一问要不要多想想"是逐条变的,
-    /// 而设置页里那个值代表的是这个模型平常怎么用。换模型时清掉(见 ProviderCombo 的处理)。
+    /// 而设置页里那个值代表的是这个模型平常怎么用。换模型时清掉(见 ProviderList 的处理)。
     /// </remarks>
     private ReasoningLevel? _reasoningOverride;
 
@@ -316,10 +316,7 @@ public partial class ChatPanelView : UserControl
             ApplyApprovalMode(); // 并且当场对这一轮生效(含放行已经挂出来的卡)
             _ = PersistSettingsAsync();
         };
-        // 项是"供应商·模型"字符串,名字长时被 MaxWidth 截住:收成省略号,而不是从半个字中间切断
-        ProviderCombo.ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<string>(
-            (label, _) => new TextBlock { Text = label, TextTrimming = TextTrimming.CharacterEllipsis });
-        ProviderCombo.SelectionChanged += (_, _) =>
+        ProviderList.SelectionChanged += (_, _) =>
         {
             // 重载中的回声整个不算数:换货那一瞬下拉的下标还是旧的,拿它回写会把
             // 刚刚程序化切过去的那家悄悄改回去;下面"换模型作废临时思考档位"同样是
@@ -332,9 +329,9 @@ public partial class ChatPanelView : UserControl
             }
             // 手动改选(含改了又改回来):粘住/回滚要认的是"动过",不是"现在指着谁"
             _selectionEpoch++;
-            if (ProviderCombo.SelectedIndex >= 0 && ProviderCombo.SelectedIndex < _providers.Count)
+            if (ProviderList.SelectedIndex >= 0 && ProviderList.SelectedIndex < _providers.Count)
             {
-                _settings.ActiveModelId = _providers[ProviderCombo.SelectedIndex].Id;
+                _settings.ActiveModelId = _providers[ProviderList.SelectedIndex].Id;
                 _ = PersistSettingsAsync();
             }
             // 换了模型,上一个模型的临时档位就不作数了 —— 各家的档位含义与默认值本来就不同,
@@ -344,9 +341,10 @@ public partial class ChatPanelView : UserControl
             // 上下文窗口是按接入配的,换模型就得按新分母重算占比
             UpdateUsageText();
         };
+        ConfigureModelPopup();
         ReasoningCombo.SelectionChanged += (_, _) =>
         {
-            if (_syncingReasoning || ReasoningCombo.SelectedIndex < 0)
+            if (_syncingReasoning || ReasoningCombo.SelectedIndex < 0 || ActiveProvider?.ReasoningAdjustable == false)
             {
                 return;
             }
@@ -357,6 +355,7 @@ public partial class ChatPanelView : UserControl
                 ? null
                 : picked;
             SyncReasoningUi();
+            UpdateUsageText();
         };
 
         _context.Events.SessionConnected += OnSessionEvent;
@@ -380,6 +379,7 @@ public partial class ChatPanelView : UserControl
     {
         if (_detached) return;
         _detached = true;
+        CloseModelPopup();
         _context.Events.SessionConnected -= OnSessionEvent;
         _context.Events.SessionDisconnected -= OnSessionEvent;
         _context.Events.LocaleChanged -= OnLocaleChanged;
@@ -491,12 +491,13 @@ public partial class ChatPanelView : UserControl
         ReloadApprovalItems();
         ModeCombo.SelectedIndex = mode;
         ApprovalCombo.SelectedIndex = approval;
-        // 顺序与 ReasoningLevel 一一对应(默认 / 关 / 低 / 中 / 高),下面按索引强转回枚举
+        // 顺序与 ReasoningLevel 一一对应,下面按索引强转回枚举
         _syncingReasoning = true;
         ReasoningCombo.ItemsSource = (string[])
         [
             _loc["ReasoningAuto"], _loc["ReasoningOff"],
-            _loc["ReasoningLow"], _loc["ReasoningMedium"], _loc["ReasoningHigh"]
+            _loc["ReasoningLow"], _loc["ReasoningMedium"], _loc["ReasoningHigh"],
+            _loc["ReasoningExtraHigh"], _loc["ReasoningMax"]
         ];
         _syncingReasoning = false;
         SyncReasoningUi();
@@ -512,9 +513,11 @@ public partial class ChatPanelView : UserControl
         HistoryHeader.Text = _loc["HistoryHeader"];
         HistorySearchBox.PlaceholderText = _loc["SearchHistory"];
         SyncSendButton(); // 发送键的文案与输入框提示随"忙不忙"变,取词收在一处
-        StopText.Text = _loc["Stop"];
+        Avalonia.Automation.AutomationProperties.SetName(AttachButton, _loc["AttachLocal"]);
+        ToolTip.SetTip(AttachButton, _loc["AttachLocal"]);
+        Avalonia.Automation.AutomationProperties.SetName(StopButton, _loc["Stop"]);
         ToolTip.SetTip(StopButton, _loc["Stop"]);
-        ToolTip.SetTip(ProviderCombo, _loc["Model"]);
+        ToolTip.SetTip(ModelButton, _loc["Model"]);
         UpdateUsageText();
         // 代码块头部按钮的提示藏在 LiveMarkdown 的 ControlTemplate 里,只能经 DynamicResource 灌进去
         Resources["AiCopyTip"] = _loc["Copy"];
@@ -814,7 +817,7 @@ public partial class ChatPanelView : UserControl
             _providers = _settings.ResolveModels();
             // 一律写成"供应商·模型"(如 Routin·gpt-5.5):几家中转站挂着同名模型时只看模型名分不清,
             // 只配了一家时也照样带上 —— 下拉里看到的就是请求实际发往哪儿,不随供应商个数变来变去。
-            ProviderCombo.ItemsSource = _providers
+            ProviderList.ItemsSource = _providers
                 .Select(p => string.IsNullOrWhiteSpace(p.ProviderName) ? p.Name : $"{p.ProviderName}·{p.Name}")
                 .ToList();
             int active = _providers.FindIndex(p => p.Id == _settings.ActiveModelId);
@@ -827,7 +830,7 @@ public partial class ChatPanelView : UserControl
                 _settings.ActiveModelId = _providers[0].Id;
                 _ = PersistSettingsAsync();
             }
-            ProviderCombo.SelectedIndex = active >= 0 ? active : (_providers.Count > 0 ? 0 : -1);
+            ProviderList.SelectedIndex = active >= 0 ? active : (_providers.Count > 0 ? 0 : -1);
         }
         finally
         {
@@ -852,8 +855,8 @@ public partial class ChatPanelView : UserControl
     }
 
     private ResolvedModel? ActiveProvider
-        => ProviderCombo.SelectedIndex >= 0 && ProviderCombo.SelectedIndex < _providers.Count
-            ? _providers[ProviderCombo.SelectedIndex]
+        => ProviderList.SelectedIndex >= 0 && ProviderList.SelectedIndex < _providers.Count
+            ? _providers[ProviderList.SelectedIndex]
             : null;
 
     /// <summary>这一轮真正要用的接入:带上输入框旁边那个临时档位(没改过就是原样)。</summary>
@@ -888,11 +891,22 @@ public partial class ChatPanelView : UserControl
 
         bool overridden = _reasoningOverride is not null;
         ReasoningCombo.Classes.Set("overridden", overridden);
-        ToolTip.SetTip(ReasoningCombo, _loc[!adjustable
+        string hint = _loc[!adjustable
             ? "ReasoningUnsupportedTip"
             : overridden
                 ? "ReasoningOverrideTip"
-                : "ReasoningTip"]);
+                : "ReasoningTip"];
+        ToolTip.SetTip(ReasoningCombo, hint);
+        ToolTip.SetTip(ReasoningHeading, hint);
+        ModelHeading.Text = _loc["Model"];
+        ReasoningHeading.Text = _loc["Reasoning"];
+        Avalonia.Automation.AutomationProperties.SetName(ProviderList, _loc["Model"]);
+        Avalonia.Automation.AutomationProperties.SetName(ReasoningCombo, _loc["Reasoning"]);
+        Avalonia.Automation.AutomationProperties.SetHelpText(ReasoningCombo, hint);
+        ModelSummary.Text = active is null ? _loc["Model"] : ProviderModelLabel(active);
+        ReasoningSummary.Text = active is null ? "" : $"{ReasoningCombo.Items[(int)effective]}";
+        ModelButton.Classes.Set("overridden", overridden);
+        Avalonia.Automation.AutomationProperties.SetName(ModelButton, $"{_loc["Model"]}: {ModelSummary.Text} {ReasoningSummary.Text}".TrimEnd());
     }
 
     /// <summary>
@@ -908,8 +922,9 @@ public partial class ChatPanelView : UserControl
         }
         int window = ActiveProvider?.MaxInputTokens ?? 0;
         string windowWarning = _loc.ContextWindowWarning(window, ActiveProvider?.Config.DefaultContextWindow);
-        ToolTip.SetTip(ProviderCombo, windowWarning.Length > 0 ? _loc["Model"] + "\n" + windowWarning : _loc["Model"]);
-        Avalonia.Automation.AutomationProperties.SetHelpText(ProviderCombo, windowWarning);
+        string modelTip = $"{_loc["Model"]}: {ModelSummary.Text} {ReasoningSummary.Text}".TrimEnd();
+        ToolTip.SetTip(ModelButton, windowWarning.Length > 0 ? modelTip + "\n" + windowWarning : modelTip);
+        Avalonia.Automation.AutomationProperties.SetHelpText(ModelButton, windowWarning);
         if (TotalInputTokens == 0 && TotalOutputTokens == 0)
         {
             UsageText.Text = "";
@@ -1270,7 +1285,7 @@ public partial class ChatPanelView : UserControl
     /// <summary>发送键与输入框提示按"忙不忙"取词(语言切换与忙闲切换都经这里)。</summary>
     private void SyncSendButton()
     {
-        SendText.Text = _loc[Busy ? "Queue" : "Send"];
+        Avalonia.Automation.AutomationProperties.SetName(SendButton, _loc[Busy ? "Queue" : "Send"]);
         ToolTip.SetTip(SendButton, _loc[Busy ? "QueueTip" : "Send"]);
         InputPlaceholder.Text = _loc[Busy ? "InputPlaceholderBusy" : "InputPlaceholder"];
     }

@@ -71,7 +71,7 @@ public sealed partial class ChatPanelViewUiTests
 
                 sessions.SelectedIndex = 0;
                 await PumpAsync();
-                Find<ComboBox>(panel, "ProviderCombo").SelectedIndex = 1;
+                Find<ListBox>(panel, "ProviderList").SelectedIndex = 1;
                 panel.SendExternal("第五条触发故障转移和后台压缩");
                 await broken.RequestBodyAsync.WaitAsync(TimeSpan.FromSeconds(10));
                 // 首个请求在真实HTTP端挂住后再切走，确保发送已绑定A会话。
@@ -900,7 +900,7 @@ public sealed partial class ChatPanelViewUiTests
                     Find<ComboBox>(panel, "SessionCombo").SelectedIndex = 1;
                     await FinishSuggestionsAsync(originalSuggestion);
                     Assert.IsEmpty(Find<TextBlock>(panel, "UsageText").Text ?? "", "取消的候选建议不能结算到新会话");
-                    Find<ComboBox>(panel, "ProviderCombo").SelectedIndex = 2;
+                    Find<ListBox>(panel, "ProviderList").SelectedIndex = 2;
                     panel.SendExternal("OTHER_SESSION_PROMPT");
                     Assert.IsTrue(await WaitForAsync(() => !ReferenceEquals(SuggestionTask(panel), originalSuggestion)
                         && SuggestionTask(panel) is not null));
@@ -1026,12 +1026,12 @@ public sealed partial class ChatPanelViewUiTests
                 FindIn<ListBox>(editor, "ProvidersList").SelectedIndex = 3; // c,c/m,a,a/m,b,b/m
                 await PumpAsync(5);
                 RaiseClick(FindIn<Button>(editor, "DeleteButton"));
-                Assert.IsTrue(await WaitForAsync(() => Find<ComboBox>(panel, "ProviderCombo").ItemCount == 2));
+                Assert.IsTrue(await WaitForAsync(() => Find<ListBox>(panel, "ProviderList").ItemCount == 2));
                 Assert.AreEqual(b.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
                 Click(panel, "StopButton");
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
                 Assert.AreEqual(b.Models[0].Id, (await store.LoadAsync()).ActiveModelId, "原 A 已删除，不可把不存在的 ID 写回或兜底选第一 C");
-                Assert.AreEqual(1, Find<ComboBox>(panel, "ProviderCombo").SelectedIndex);
+                Assert.AreEqual(1, Find<ListBox>(panel, "ProviderList").SelectedIndex);
                 Assert.IsEmpty(unused.Requests, "删除非当前模型不该让取消选择转移到 C");
             }
             finally { backup.Release(); host?.Close(); panel.Detach(); window.Close(); }
@@ -1205,7 +1205,7 @@ public sealed partial class ChatPanelViewUiTests
                 if (reopen)
                 {
                     (reopenedWindow, reopened) = await ShowAsync(context);
-                    Find<ComboBox>(reopened, "ProviderCombo").SelectedIndex = 2;
+                    Find<ListBox>(reopened, "ProviderList").SelectedIndex = 2;
                     await PumpAsync(5);
                     Assert.AreEqual(c.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
                 }
@@ -1213,7 +1213,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible));
                 Assert.AreEqual(reopen ? c.Models[0].Id : a.Models[0].Id, (await store.LoadAsync()).ActiveModelId,
                     "关闭的面板不能回滚共享配置;同面板取消仍应回滚");
-                if (reopened is not null) Assert.AreEqual(2, Find<ComboBox>(reopened, "ProviderCombo").SelectedIndex);
+                if (reopened is not null) Assert.AreEqual(2, Find<ListBox>(reopened, "ProviderList").SelectedIndex);
                 var history = new ChatHistoryStore(context);
                 await history.InitAsync();
                 IReadOnlyList<ChatSessionSummary> sessions = await history.ListSessionsAsync();

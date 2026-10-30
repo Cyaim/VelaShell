@@ -588,10 +588,10 @@ public sealed partial class ChatPanelViewUiTests
                     "第一家鉴权挂了,要能按链切到第二家把话说完");
 
                 if (!await WaitForAsync(
-                        () => Find<ComboBox>(panel, "ProviderCombo").SelectedIndex == 1, 60))
+                        () => Find<ListBox>(panel, "ProviderList").SelectedIndex == 1, 60))
                 {
                     AiSettings mid = await new AiSettingsStore(context).LoadAsync();
-                    Assert.Fail($"诊断: combo={Find<ComboBox>(panel, "ProviderCombo").SelectedIndex}, " +
+                    Assert.Fail($"诊断: combo={Find<ListBox>(panel, "ProviderList").SelectedIndex}, " +
                         $"active={mid.ActiveModelId}, first={first.Models[0].Id}, second={second.Models[0].Id}, " +
                         $"brokenReq={broken.Requests}, healthyReq={healthy.Requests.Count}, " +
                         $"status={Find<TextBlock>(panel, "StatusText").Text}, footers={Footers(messages).Count}");
@@ -733,7 +733,7 @@ public sealed partial class ChatPanelViewUiTests
                     Click(panel, "NewChatButton");
                     Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible),
                         "先让旧探活的取消收尾，避免把新消息排进旧轮次");
-                    Find<ComboBox>(panel, "ProviderCombo").SelectedIndex = 1;
+                    Find<ListBox>(panel, "ProviderList").SelectedIndex = 1;
                     panel.SendExternal("新会话自己的用量");
                     Assert.IsTrue(await WaitForAsync(() => !Find<Button>(panel, "StopButton").IsVisible
                         && Footers(Find<StackPanel>(panel, "MessagesPanel")).Count == 1));
@@ -909,7 +909,7 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("第一次");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 1));
                 Assert.AreEqual(1, unprobeable.Requests, "首次跳过坏候选前确实探测过它");
-                Find<ComboBox>(panel, "ProviderCombo").SelectedIndex = 0;
+                Find<ListBox>(panel, "ProviderList").SelectedIndex = 0;
                 panel.SendExternal("第二次");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 2));
                 Assert.AreEqual(1, unprobeable.Requests, "候选探活失败必须进入冷却,不能下一轮又探一次");
@@ -950,7 +950,7 @@ public sealed partial class ChatPanelViewUiTests
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
             {
-                ComboBox selector = Find<ComboBox>(panel, "ProviderCombo");
+                ListBox selector = Find<ListBox>(panel, "ProviderList");
                 panel.SendExternal("会话刚开始");
                 Assert.IsTrue(await WaitForAsync(() => broken.Requests.Count == 1), "首站正式请求尚未返回错误");
                 selector.SelectedIndex = 2;
@@ -1007,7 +1007,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 ComboBox sessions = Find<ComboBox>(panel, "SessionCombo");
-                ComboBox models = Find<ComboBox>(panel, "ProviderCombo");
+                ListBox models = Find<ListBox>(panel, "ProviderList");
                 panel.SendExternal("对话0等待B");
                 Assert.IsTrue(await WaitForAsync(() => heldB.Requests.Count == 2 && models.SelectedIndex == 1));
                 Assert.Contains("\"stream\":true", heldB.Requests[0]);
@@ -1090,7 +1090,7 @@ public sealed partial class ChatPanelViewUiTests
             {
                 // 前台先由 B 计费,再手动切到 A:相同统计先按 A 的窗口展示。
                 ComboBox sessions = Find<ComboBox>(panel, "SessionCombo");
-                ComboBox models = Find<ComboBox>(panel, "ProviderCombo");
+                ListBox models = Find<ListBox>(panel, "ProviderList");
                 panel.SendExternal("前台用量");
                 StackPanel visible = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.IsTrue(await WaitForAsync(() => Footers(visible).Count == 1));
@@ -1185,7 +1185,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 ComboBox sessions = Find<ComboBox>(panel, "SessionCombo");
-                ComboBox models = Find<ComboBox>(panel, "ProviderCombo");
+                ListBox models = Find<ListBox>(panel, "ProviderList");
                 panel.SendExternal("前台用量");
                 StackPanel visible = Find<StackPanel>(panel, "MessagesPanel");
                 Assert.IsTrue(await WaitForAsync(() => Footers(visible).Count == 1));
@@ -1284,7 +1284,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 ComboBox sessions = Find<ComboBox>(panel, "SessionCombo");
-                ComboBox models = Find<ComboBox>(panel, "ProviderCombo");
+                ListBox models = Find<ListBox>(panel, "ProviderList");
                 panel.SendExternal("首会话:故障转移探活");
                 Assert.IsTrue(await WaitForAsync(() => target.Requests.Count == 1), "旧探活已在真实 HTTP 端挂起");
                 Assert.Contains("\"stream\":true", target.Requests[0]);
@@ -1365,7 +1365,7 @@ public sealed partial class ChatPanelViewUiTests
                     "切换前要先探活第二家");
 
                 // 探活还没回来,用户把选择改到第三家:这是一次更新的手动选择
-                Find<ComboBox>(panel, "ProviderCombo").SelectedIndex = 2;
+                Find<ListBox>(panel, "ProviderList").SelectedIndex = 2;
 
                 healthy.Release();
                 StackPanel messages = Find<StackPanel>(panel, "MessagesPanel");
@@ -1381,7 +1381,7 @@ public sealed partial class ChatPanelViewUiTests
                 AiSettings reloaded = await new AiSettingsStore(context).LoadAsync();
                 Assert.AreEqual(third.Models[0].Id, reloaded.ActiveModelId,
                     "探活期间被动过的手选是更新的选择:这一轮切站但不粘住,不许拿落盘盖回去");
-                Assert.AreEqual(2, Find<ComboBox>(panel, "ProviderCombo").SelectedIndex,
+                Assert.AreEqual(2, Find<ListBox>(panel, "ProviderList").SelectedIndex,
                     "界面也停在用户选的那家");
             }
             finally
@@ -2094,7 +2094,7 @@ public sealed partial class ChatPanelViewUiTests
                     int finished = turn;
                     Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count >= finished));
                 }
-                Find<ComboBox>(panel, "ProviderCombo").SelectedIndex = 0;
+                Find<ListBox>(panel, "ProviderList").SelectedIndex = 0;
                 panel.SendExternal("第五条触发故障转移和压缩");
                 Assert.IsTrue(await WaitForAsync(() => oldTarget.Requests.Any(body => body.Contains("You are compacting", StringComparison.Ordinal))),
                     "备用站探活之后旧凭据的真实摘要请求已挂住");
@@ -2210,7 +2210,7 @@ public sealed partial class ChatPanelViewUiTests
                     Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count >= finished
                         && !Find<Button>(panel, "StopButton").IsVisible));
                 }
-                Find<ComboBox>(panel, "ProviderCombo").SelectedIndex = 0;
+                Find<ListBox>(panel, "ProviderList").SelectedIndex = 0;
                 if (mcpWait) Find<ComboBox>(panel, "ModeCombo").SelectedIndex = (int)ChatMode.Agent;
                 panel.SendExternal("private-fifth-turn");
                 await broken.RequestBodyAsync.WaitAsync(TimeSpan.FromSeconds(15));
@@ -2636,7 +2636,7 @@ public sealed partial class ChatPanelViewUiTests
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
             {
-                Assert.AreEqual(0, Find<ComboBox>(panel, "ProviderCombo").SelectedIndex,
+                Assert.AreEqual(0, Find<ListBox>(panel, "ProviderList").SelectedIndex,
                     "悬空 id:显示并实际在用的都是第一项");
 
                 await PumpAsync(20); // 写回是 fire-and-forget 的落盘,给它几拍
@@ -3024,7 +3024,7 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("随便说点什么");
                 Assert.IsTrue(await WaitForAsync(
                         () => Footers(messages).Count > 0
-                              && Find<ComboBox>(panel, "ProviderCombo").SelectedIndex == 1),
+                              && Find<ListBox>(panel, "ProviderList").SelectedIndex == 1),
                     "前提:第一家 401,按链切到第二家并粘住");
                 Assert.DoesNotContain("overridden", combo.Classes,
                     "换站清掉开跑时的临时档位 —— chip 还亮着就是在骗人(review⑥#6)");
@@ -3086,7 +3086,7 @@ public sealed partial class ChatPanelViewUiTests
                 await PumpAsync(10);
                 Assert.HasCount(1, candidate.Requests, "停止后迟到的探活不得启动正式请求");
                 Assert.AreEqual(first.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
-                Assert.AreEqual(0, Find<ComboBox>(panel, "ProviderCombo").SelectedIndex);
+                Assert.AreEqual(0, Find<ListBox>(panel, "ProviderList").SelectedIndex);
                 Assert.IsEmpty(AnswerRenderers(Find<StackPanel>(panel, "MessagesPanel")));
             }
             finally { candidate.Release(); panel.Detach(); window.Close(); }
@@ -3140,7 +3140,7 @@ public sealed partial class ChatPanelViewUiTests
                     Assert.DoesNotContain("Reply with exactly:", backup.Requests[1]);
                     Assert.AreEqual("回答", AnswerRenderers(messages).Single().MarkdownBuilder.ToString());
                     Assert.AreEqual(second.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
-                    Assert.AreEqual(1, Find<ComboBox>(panel, "ProviderCombo").SelectedIndex);
+                    Assert.AreEqual(1, Find<ListBox>(panel, "ProviderList").SelectedIndex);
                 }
                 else
                 {
@@ -3191,7 +3191,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.HasCount(3, empty.Requests, "首站正式空白回复只允许原地重试两次");
                 Assert.HasCount(2, backup.Requests, "备用一次探活一次正式回复");
                 Assert.AreEqual(second.Models[0].Id, (await store.LoadAsync()).ActiveModelId);
-                Assert.AreEqual(1, Find<ComboBox>(panel, "ProviderCombo").SelectedIndex);
+                Assert.AreEqual(1, Find<ListBox>(panel, "ProviderList").SelectedIndex);
                 Assert.AreEqual("回答", AnswerRenderers(messages).Single().MarkdownBuilder.ToString(),
                     "失败首站的空白不能残留在备用正文之前");
             }
@@ -3286,7 +3286,7 @@ public sealed partial class ChatPanelViewUiTests
                 panel.SendExternal("先建立真实历史上下文");
                 Assert.IsTrue(await WaitForAsync(() => Footers(messages).Count == 1 && !Find<Button>(panel, "StopButton").IsVisible));
                 Assert.Contains("50/100", Find<TextBlock>(panel, "UsageText").Text ?? "");
-                Find<ComboBox>(panel, "ProviderCombo").SelectedIndex = 1;
+                Find<ListBox>(panel, "ProviderList").SelectedIndex = 1;
                 panel.SendExternal("空流失败后备用不报告用量");
                 Assert.IsTrue(await WaitForAsync(() => backup.Requests.Count == 2 && !Find<Button>(panel, "StopButton").IsVisible));
                 Assert.HasCount(3, failed.Requests, "失败元数据流有限重试两次");

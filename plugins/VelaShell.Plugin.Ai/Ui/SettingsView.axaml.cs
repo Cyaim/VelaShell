@@ -121,7 +121,7 @@ public partial class SettingsView : UserControl
 
     /// <summary>思考档位下拉的文案键,顺序与 <see cref="ReasoningLevel" /> 一一对应。</summary>
     private static readonly string[] ReasoningKeys =
-        ["ReasoningDefault", "ReasoningOff", "ReasoningLow", "ReasoningMedium", "ReasoningHigh"];
+        ["ReasoningDefault", "ReasoningOff", "ReasoningLow", "ReasoningMedium", "ReasoningHigh", "ReasoningExtraHigh", "ReasoningMax"];
 
     private readonly IPluginContext _context;
     private readonly AiSettingsStore _store;

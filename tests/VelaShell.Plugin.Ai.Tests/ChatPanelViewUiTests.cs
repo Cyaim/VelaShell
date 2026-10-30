@@ -94,7 +94,7 @@ public sealed partial class ChatPanelViewUiTests
             {
                 // 顶栏三件套 + 输入区 + 新增的历史区都应在可视树里
                 Assert.IsNotNull(Find<ToggleButton>(panel, "HistoryToggle"));
-                // 设置与"配置工具"按钮分别位于顶栏和输入框下方,均打开独立窗口
+                // 设置与"配置工具"按钮分别位于顶栏和模型入口右侧,均打开独立窗口
                 Assert.IsNotNull(Find<Button>(panel, "SettingsButton"));
                 Assert.IsNotNull(Find<Button>(panel, "ToolsButton"));
                 Assert.IsNotNull(Find<DockPanel>(panel, "HistoryHost"));
@@ -559,7 +559,7 @@ public sealed partial class ChatPanelViewUiTests
             try
             {
                 Border wrap = Find<Border>(panel, "InputWrap");
-                foreach (string name in (string[])["ProviderCombo", "ModeCombo", "SendButton", "InputBox"])
+                foreach (string name in (string[])["ModelButton", "ModeCombo", "SendButton", "InputBox"])
                 {
                     Assert.Contains(c => c.Name == name, wrap.GetVisualDescendants().OfType<Control>(),
                         $"{name} 应当在输入容器里(决定这条消息怎么发的东西要挨着输入框)");
@@ -567,7 +567,8 @@ public sealed partial class ChatPanelViewUiTests
 
                 // 用量与审批模式在容器之外的细行上,免得跟模型下拉抢宽度
                 Grid statusBar = Find<Grid>(panel, "InputStatusBar");
-                Assert.DoesNotContain(c => c.Name == "ProviderCombo", statusBar.GetVisualDescendants().OfType<Control>());
+                Assert.DoesNotContain(c => c.Name == "ModelButton", statusBar.GetVisualDescendants().OfType<Control>());
+                Assert.DoesNotContain(c => c.Name == "ModeCombo", statusBar.GetVisualDescendants().OfType<Control>());
                 Assert.IsNotNull(Find<TextBlock>(panel, "UsageText"));
                 Assert.IsNotNull(Find<ComboBox>(panel, "ApprovalCombo"));
 
@@ -1164,7 +1165,10 @@ public sealed partial class ChatPanelViewUiTests
 
                 Button tools = Find<Button>(panel, "ToolsButton");
                 Button send = Find<Button>(panel, "SendButton");
-                Assert.IsTrue(bar.GetVisualDescendants().Contains(tools), "工具配置应在输入框下方的状态行");
+                Grid toolbar = Find<Grid>(panel, "InputToolbar");
+                Button model = Find<Button>(panel, "ModelButton");
+                ComboBox mode = Find<ComboBox>(panel, "ModeCombo");
+                Assert.IsTrue(toolbar.GetVisualDescendants().Contains(tools), "工具配置应在模型选择右侧的操作行");
                 Assert.IsNotNull(tools.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>().Single().Data,
                     "工具图标在没有宿主图标资源时也应可用");
                 usage.Text = new string('8', 100);
@@ -1176,14 +1180,15 @@ public sealed partial class ChatPanelViewUiTests
                     window.Arrange(new Rect(window.ClientSize));
                     await PumpAsync(5);
 
-                    Assert.AreEqual(CentreY(approval, bar), CentreY(tools, bar), 0.75,
-                        "工具按钮与审批框应在同一条中心线上");
-                    Point toolsOrigin = tools.TranslatePoint(default, bar)!.Value;
-                    Assert.AreEqual(bar.Bounds.Width, toolsOrigin.X + tools.Bounds.Width, 0.75,
-                        $"窄面板和长用量文字也不能挤走靠右的工具按钮: approval={approval.Bounds.Width}, usage={usage.Bounds.Width}, tools={tools.Bounds.Width}");
-                    Assert.IsTrue(tools.TranslatePoint(default, panel)!.Value.Y >=
-                        send.TranslatePoint(default, panel)!.Value.Y + send.Bounds.Height,
-                        "工具配置应位于发送按钮下方");
+                    Assert.AreEqual(CentreY(send, toolbar), CentreY(tools, toolbar), 0.75,
+                        "工具按钮与发送按钮应在同一条中心线上");
+                    Point toolsOrigin = tools.TranslatePoint(default, toolbar)!.Value;
+                    Point modelOrigin = model.TranslatePoint(default, toolbar)!.Value;
+                    Point modeOrigin = mode.TranslatePoint(default, toolbar)!.Value;
+                    Assert.AreEqual(modelOrigin.X + model.Bounds.Width + tools.Margin.Left, toolsOrigin.X, 1,
+                        "工具入口应紧邻模型选择右侧");
+                    Assert.IsTrue(toolsOrigin.X + tools.Bounds.Width <= modeOrigin.X,
+                        "工具入口应位于模式选择左侧");
                 }
             }
             finally
@@ -1604,9 +1609,10 @@ public sealed partial class ChatPanelViewUiTests
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
             {
-                ComboBox combo = Find<ComboBox>(panel, "ProviderCombo");
+                ListBox combo = Find<ListBox>(panel, "ProviderList");
                 Assert.AreSequenceEqual(["Routin·gpt-5.5"], combo.Items.Cast<object>().ToArray());
-                TextBlock shown = combo.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Text == "Routin·gpt-5.5");
+                TextBlock shown = Find<TextBlock>(panel, "ModelSummary");
+                Assert.Contains("Routin·gpt-5.5", shown.Text!);
                 Assert.AreEqual(Avalonia.Media.TextTrimming.CharacterEllipsis, shown.TextTrimming, "选中框里的长名字要收成省略号");
 
                 AiSettings live = PanelSettings(panel);

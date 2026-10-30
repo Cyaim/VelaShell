@@ -67,7 +67,13 @@ public enum ReasoningLevel
     Medium,
 
     /// <summary>高。</summary>
-    High
+    High,
+
+    /// <summary>超高(xhigh)。</summary>
+    ExtraHigh,
+
+    /// <summary>最高(max)。</summary>
+    Max
 }
 
 /// <summary>

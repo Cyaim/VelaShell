@@ -434,20 +434,30 @@
       <Setter Property="TextWrapping" Value="NoWrap" />
     </Style>
 
-    <!-- 输入框下方的工具条:模型选择 / Agent 开关 / 用量。控件统一 24 高并垂直居中
-         (同顶栏的理由:混用自然高度会错开中线,勾选随 Agent 显隐时还会撑高整行)。 -->
+    <Style Selector="Grid#InputToolbar Button, Grid#InputToolbar ComboBox">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Height" Value="22" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
     <Style Selector="Grid#InputToolbar ComboBox">
-      <Setter Property="MinHeight" Value="24" />
-      <Setter Property="Height" Value="24" />
       <Setter Property="Padding" Value="8,0,0,0" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
     </Style>
-    <!-- 这一行的高度必须与内容无关:审批选择器只在带工具的模式下出现,行一变高整个输入区就会跳。
-         行高写死,里头的下拉也跟着写死同一高度(MinHeight 得压过主题里的 26)。 -->
     <Style Selector="Grid#InputStatusBar">
       <Setter Property="Height" Value="20" />
+    </Style>
+    <Style Selector="ListBox#ProviderList">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox#ProviderList ListBoxItem">
+      <Setter Property="Theme" Value="{StaticResource AiModelMenuItemTheme}" />
+    </Style>
+    <Style Selector="Button#ModelButton:focus-visible, Button#AttachButton:focus-visible, Button#StopButton:focus-visible">
+      <Setter Property="Background" Value="{DynamicResource VelaAccentDim}" />
     </Style>
     <Style Selector="Grid#InputStatusBar ComboBox">
       <Setter Property="FontSize" Value="{DynamicResource VelaFontSize11}" />
@@ -753,9 +763,8 @@
       </StackPanel>
     </Grid>
 
-    <!-- 最下沿的一条细行(同 Copilot 输入框下方那排):左边是 Agent 的审批模式,
-         右边是 token 用量和工具配置。放在容器外而不是工具条里,是为了不跟模型下拉抢那点宽度。 -->
-    <Grid x:Name="InputStatusBar" DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto,Auto" Margin="2,5,2,0">
+    <!-- 最下沿的一条细行:左边是 Agent 的审批模式,右边是 token 用量和上下文占用条。 -->
+    <Grid x:Name="InputStatusBar" DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto" Margin="2,5,2,0">
       <!-- 审批方式:默认审批 / 只读放行 / 绕过审批(只在有工具的模式下才有意义)。
            三档的语义色由 SyncModeUi 就地写(问=中性 / 只读自动=warn / 全部自动=error) ——
            这是个安全开关,当前挡位该在余光里就能读出来。 -->
@@ -788,18 +797,9 @@
         <Border x:Name="UsageMeterFill" Width="0" CornerRadius="2"
                 HorizontalAlignment="Left" Background="{DynamicResource VelaAccent}" />
       </Border>
-      <Button x:Name="ToolsButton" Grid.Column="3" Theme="{StaticResource AiGhostIconButtonTheme}"
-              Width="24" Height="20" MinWidth="0" MinHeight="0" Margin="8,0,0,0"
-              HorizontalAlignment="Right" VerticalAlignment="Center">
-        <Viewbox Width="13" Height="13">
-          <Path Width="24" Height="24" Data="{StaticResource AiIcon.wrench}"
-                Stroke="{DynamicResource VelaTextSecondary}" StrokeThickness="2"
-                StrokeLineCap="Round" StrokeJoin="Round" />
-        </Viewbox>
-      </Button>
     </Grid>
 
-    <!-- 输入容器 = 编辑区 + 其下的工具条(模型选择 / Agent / 发送),状态行悬于其上。
+    <!-- 输入容器 = 编辑区 + 其下的工具条(附件 / 模型与思考摘要 / 工具配置 / 模式 / 发送),状态行置于容器外。
          工具条与编辑区同处一个描边容器内,是 GitHub Copilot 的做法 —— 这些开关属于"这一条消息",
          视觉上就该被输入框圈进去,而不是散在顶栏。
          @ 文件选择弹层挂在输入容器上沿:焦点始终留在输入框(弹层不接管键盘),
@@ -838,57 +838,86 @@
                      VerticalAlignment="Top" TextWrapping="Wrap" />
         </Panel>
 
-        <!-- 只放"发这一条要用什么":模型 / 思考档位 / Agent / 发送。
-             模型与思考档位<b>必须紧挨着</b> —— 后者改的正是"这个模型这一问想多深",
-             两者是一件事的两半;中间隔开的话读起来像是两件不相干的设置。
-             所以空档(*)放在它们<b>之后</b>:面板收窄时先吃掉这段空白,
-             而不是把发送按钮挤出边界。 -->
-        <Grid x:Name="InputToolbar" Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" Margin="6,0,5,5">
+        <Grid x:Name="InputToolbar" Grid.Row="1" ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="6,0,5,5">
           <Button x:Name="AttachButton" Theme="{StaticResource AiGhostIconButtonTheme}" Margin="0,0,4,0">
             <Viewbox Width="13" Height="13">
-              <Path Width="24" Height="24" Data="{DynamicResource Icon.plus}"
-                    Stroke="{DynamicResource VelaTextMuted}" StrokeThickness="2"
+              <Path Width="24" Height="24" Data="{StaticResource AiIcon.plus}"
+                    Stroke="{DynamicResource VelaTextSecondary}" StrokeThickness="2"
                     StrokeLineCap="Round" StrokeJoin="Round" />
             </Viewbox>
           </Button>
-          <ComboBox x:Name="ProviderCombo" Grid.Column="1" MaxWidth="300" HorizontalAlignment="Left" />
-          <!-- 思考档位:只管这一轮,不写回设置(见 ResolvedModel.ReasoningOverride)。
-               外观<b>不在代码里设</b> —— 本插件允许在拿不到宿主主题令牌的环境下装载
-               (见 Panel_Loads_WithoutHostThemeTokens),那时 FindResource 返回 null,
-               把前景色设成 null 会让文字整个消失、只剩一个下拉箭头。改过档时挂 .overridden 类,
-               配色交给下面的样式与 DynamicResource,取不到令牌时自然退回主题默认值。 -->
-          <ComboBox x:Name="ReasoningCombo" Grid.Column="2" Margin="6,0,0,0" MinWidth="76" />
-          <!-- 对话模式:纯对话 / 计划 / Agent(对齐 Copilot 的模式选择) -->
-          <ComboBox x:Name="ModeCombo" Grid.Column="4" Margin="6,0,0,0" MinWidth="88" />
-          <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0" VerticalAlignment="Center">
-            <!-- 主操作带文字(设计图):这一枚是整个面板唯一的"提交",纯图标要靠猜。
-                 模型那列是 * ,面板收窄时先挤模型名,挤不到这里。 -->
-            <Button x:Name="SendButton" Theme="{DynamicResource VelaAccentPillButtonTheme}"
-                    Height="24" Padding="10,0">
-              <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                <Viewbox Width="11" Height="11" VerticalAlignment="Center">
-                  <Path Width="24" Height="24" Data="{DynamicResource Icon.send}"
-                        Stroke="{DynamicResource VelaAccent}" StrokeThickness="2"
+          <Grid Grid.Column="1" ColumnDefinitions="*,Auto" HorizontalAlignment="Left" MaxWidth="386">
+            <Button x:Name="ModelButton" Theme="{StaticResource AiGhostIconButtonTheme}"
+                    Width="NaN" MinWidth="0" MaxWidth="360" HorizontalAlignment="Left" HorizontalContentAlignment="Stretch" Padding="4,0">
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="4">
+                <Viewbox Width="12" Height="12" VerticalAlignment="Center">
+                  <Path Width="24" Height="24" Data="{StaticResource AiIcon.sparkles}"
+                        Stroke="{DynamicResource VelaTextSecondary}" StrokeThickness="2"
                         StrokeLineCap="Round" StrokeJoin="Round" />
                 </Viewbox>
-                <TextBlock x:Name="SendText" VerticalAlignment="Center"
-                           FontSize="{DynamicResource VelaFontSize11}" FontWeight="Medium" />
-              </StackPanel>
+                <TextBlock x:Name="ModelSummary" Grid.Column="1" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                           FontSize="{DynamicResource VelaFontSize11}" Foreground="{DynamicResource VelaTextSecondary}" />
+                <Border Grid.Column="2" Width="1" Height="10" VerticalAlignment="Center"
+                        Background="{DynamicResource VelaBorderSecondary}" />
+                <TextBlock x:Name="ReasoningSummary" Grid.Column="3" MaxWidth="40" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                           FontSize="{DynamicResource VelaFontSize11}" Foreground="{DynamicResource VelaTextMuted}" />
+              </Grid>
             </Button>
-            <Button x:Name="StopButton" Theme="{DynamicResource VelaOutlineButtonTheme}"
-                    Height="24" Padding="10,0" IsVisible="False"
-                    Foreground="{DynamicResource VelaError}" BorderBrush="{DynamicResource VelaError}">
-              <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                <Viewbox Width="10" Height="10" VerticalAlignment="Center">
-                  <Path Width="24" Height="24" Data="{DynamicResource Icon.square}"
-                        Stroke="{DynamicResource VelaError}" StrokeThickness="2"
-                        StrokeLineCap="Round" StrokeJoin="Round" />
-                </Viewbox>
-                <TextBlock x:Name="StopText" VerticalAlignment="Center"
-                           FontSize="{DynamicResource VelaFontSize11}" FontWeight="Medium" />
-              </StackPanel>
+            <Popup x:Name="ModelPopup" PlacementTarget="{Binding #ModelButton}"
+                   Placement="TopEdgeAlignedLeft" VerticalOffset="-4" IsLightDismissEnabled="True">
+              <Border x:Name="ModelPopupBody" Width="280" Padding="6" CornerRadius="8"
+                      Background="{DynamicResource VelaBgSurface}" BorderBrush="{DynamicResource VelaBorderSecondary}" BorderThickness="1"
+                      KeyboardNavigation.TabNavigation="Cycle">
+                <StackPanel Spacing="4">
+                  <TextBlock x:Name="ModelHeading" Classes="dim" Margin="8,5,8,7" FontWeight="Medium" />
+                  <ListBox x:Name="ProviderList" MaxHeight="220" MinHeight="32" SelectionMode="AlwaysSelected"
+                           ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate x:DataType="x:String">
+                        <Grid ColumnDefinitions="18,*" ColumnSpacing="4">
+                          <Viewbox Width="12" Height="12" IsVisible="{Binding $parent[ListBoxItem].IsSelected}">
+                            <Path Width="24" Height="24" Data="{StaticResource AiIcon.check}"
+                                  Stroke="{DynamicResource VelaAccent}" StrokeThickness="2" />
+                          </Viewbox>
+                          <TextBlock Grid.Column="1" Text="{Binding}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding}" />
+                        </Grid>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                  <Border Height="1" Background="{DynamicResource VelaBorderSecondary}" />
+                  <Grid ColumnDefinitions="*,Auto" Margin="8,4,2,2" ColumnSpacing="8">
+                    <TextBlock x:Name="ReasoningHeading" Classes="dim" VerticalAlignment="Center" />
+                    <ComboBox x:Name="ReasoningCombo" Grid.Column="1" MinWidth="90" MinHeight="24" Height="24"
+                              Padding="8,0" FontSize="{DynamicResource VelaFontSize11}" VerticalContentAlignment="Center" />
+                  </Grid>
+                </StackPanel>
+              </Border>
+            </Popup>
+            <Button x:Name="ToolsButton" Grid.Column="1" Theme="{StaticResource AiGhostIconButtonTheme}"
+                    Width="22" MinWidth="0" Margin="4,0,0,0"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+              <Viewbox Width="13" Height="13">
+                <Path Width="24" Height="24" Data="{StaticResource AiIcon.wrench}"
+                      Stroke="{DynamicResource VelaTextSecondary}" StrokeThickness="2"
+                      StrokeLineCap="Round" StrokeJoin="Round" />
+              </Viewbox>
             </Button>
-          </StackPanel>
+            </Grid>
+          <ComboBox x:Name="ModeCombo" Grid.Column="2" Width="76" MinWidth="0" Margin="4,0,0,0" />
+          <Button x:Name="StopButton" Grid.Column="3" Theme="{StaticResource AiGhostIconButtonTheme}"
+                  Width="22" Margin="4,0,0,0" Padding="0" IsVisible="False">
+            <Viewbox Width="12" Height="12">
+              <Path Width="24" Height="24" Data="{StaticResource AiIcon.square}"
+                    Stroke="{DynamicResource VelaError}" StrokeThickness="2" StrokeJoin="Round" />
+            </Viewbox>
+          </Button>
+          <Button x:Name="SendButton" Grid.Column="4" Theme="{DynamicResource VelaAccentPillButtonTheme}"
+                  Width="22" MinWidth="0" Margin="4,0,0,0" Padding="0">
+            <Viewbox Width="15" Height="15">
+              <Path Width="24" Height="24" Data="{StaticResource AiIcon.arrow-up}"
+                    Stroke="{DynamicResource VelaAccent}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" />
+            </Viewbox>
+          </Button>
         </Grid>
       </Grid>
     </Border>

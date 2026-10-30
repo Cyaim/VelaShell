@@ -39,7 +39,7 @@ public sealed partial class ChatPanelViewUiTests
             (Window window, ChatPanelView panel) = await ShowAsync(context);
             try
             {
-                ComboBox modelPicker = Find<ComboBox>(panel, "ProviderCombo");
+                Button modelPicker = Find<Button>(panel, "ModelButton");
                 Assert.IsTrue(modelPicker.IsVisible && modelPicker.IsEffectivelyVisible);
                 string before = ToolTip.GetTip(modelPicker)?.ToString() ?? "";
                 var beforeLoc = new Loc("en");
@@ -295,12 +295,12 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.AreEqual(requestChanged ? healthVersion + 1 : healthVersion, health.Version);
                 Assert.AreEqual(!requestChanged, health.IsCooling(provider.Models[0].Id));
                 Assert.AreEqual(!requestChanged, health.IsKeyCooling(provider.Id));
-                Assert.HasCount(modelCount, Find<ComboBox>(panel, "ProviderCombo").Items);
+                Assert.HasCount(modelCount, Find<ListBox>(panel, "ProviderList").Items);
                 Assert.HasCount(modelCount - 1, FindIn<ComboBox>(view, "FailoverAddCombo").Items);
                 if (change == "name")
                 {
                     Assert.AreEqual("renamed model", modelSettings.GetControl<TextBox>("NameBox").Text);
-                    Assert.Contains("renamed model", Find<ComboBox>(panel, "ProviderCombo").Items[0]?.ToString() ?? "");
+                    Assert.Contains("renamed model", Find<ListBox>(panel, "ProviderList").Items[0]?.ToString() ?? "");
                 }
                 Assert.AreEqual("explicit prompt draft", FindIn<TextBox>(view, "SystemPromptBox").Text);
                 RaiseClick(save);
@@ -420,7 +420,7 @@ public sealed partial class ChatPanelViewUiTests
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(panel)!;
                 health.Record(provider.Models[0].Id, false);
                 Assert.IsTrue(await WaitForAsync(() => FindIn<TextBlock>(view, "FailoverRowStatus").Text == loc["DotCooling"]));
-                Assert.HasCount(2, Find<ComboBox>(panel, "ProviderCombo").Items);
+                Assert.HasCount(2, Find<ListBox>(panel, "ProviderList").Items);
                 AiSettings live = PanelSettings(panel);
                 AiProvider kept = live.Providers[0];
                 var otherStore = new AiSettingsStore(context);
@@ -449,7 +449,7 @@ public sealed partial class ChatPanelViewUiTests
                 Assert.IsTrue(reboundRemove.IsFocused, "恢复重建链条时保留同模型操作焦点");
                 Assert.IsFalse(health.IsCooling(provider.Models[0].Id), "Reload 发布必须清掉旧配置冷却");
                 Assert.IsFalse(FindIn<TextBlock>(view, "FailoverRowStatus").IsVisible, "恢复发布后旧红灯必须熄灭");
-                Assert.HasCount(1, Find<ComboBox>(panel, "ProviderCombo").Items, "父模型下拉必须删除外部已移除项");
+                Assert.HasCount(1, Find<ListBox>(panel, "ProviderList").Items, "父模型下拉必须删除外部已移除项");
                 Assert.AreEqual("keep model draft", modelSettings.GetControl<TextBox>("NameBox").Text);
                 Assert.HasCount(2, modelSettings.GetControl<ListBox>("ProvidersList").Items);
                 RaiseClick(save);
