@@ -3268,3 +3268,11 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 **验证**：Windows Debug `-warnaserror` 下外部编辑分类 26/26，通过故障用例独立重复 10 轮；AI 撤权竞态回归修正前稳定失败、修正后通过，完整 ChatPanel 与传输注册表 380/380 通过，故障用例再次独立重复 10 轮通过，均无跳过。GitHub 在本次 PR 创建时报告 Actions 服务降级，初次三个平台作业均排队；远端三平台结果以最终提交的 PR Checks 为准，此记录没有把排队记作通过。
 
 **文档**：`manual.md` / `manual.en.md` 同步补充撤权后原传输卡不再被迟到通知恢复信息的说明。修正恢复 velashell-docs `plugins/11-automation-and-ai.md` §1.6–1.7 既有的撤权后隐藏元数据约定，接口、配置和构建流程均未改变。
+
+## 295. 2026-10-31 连接对话框：主机留空提示跟着变体标签走，没有端点的变体收起跳板主机
+
+**起因**：§292 / §293 合入后，数据库插件验收时发现的两处：
+
+- 主机留空的提示跟着变体的主机标签说：当前变体给了 `WorkspaceVariant.HostLabel` 时，`HostError` 取新键 `Profile_ErrHostRequiredFormat`（SQLite：「请填写数据库文件」，五份 resx 齐）；没有变体、或变体没给 `HostLabel` 时仍是 `Profile_ErrHostRequired`。描述符级的标签（S3 的「服务端点」）不在此列。换类型时补发 `HostError` 通知。
+- 没有端点的表单收起「跳板主机」那一行：`ShowJumpHostField = ShowPortField`，变体或描述符声明 `NoEndpoint` 时为 false，串口同理；SSH / SFTP / FTP、Redis、S3、Telnet 照旧显示。只收显示，已存的跳板值不清，切回有端点的类型时原样回来；连接时建不建隧道仍按 `WorkspaceVariants.EffectiveFeatures` 判定，未改。
+- 用例：`ConnectionProfileTypePickerTests` 三条（提示跟标签走 / 跳板行随端点收起且值保留 / 无变体工作台不受影响），`ConnectionProfileViewUiTests` 一条 headless（断言落在绑定跳板列表的下拉及其所在行上）。变异「提示不跟标签走」「跳板行不看端点」「删掉 AXAML 那一行的 IsVisible 绑定」均使对应用例失败。`manual.md` / `manual.en.md` §4.1 同步一句。
