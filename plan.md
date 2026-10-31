@@ -3286,3 +3286,13 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 **验证**：Windows / .NET SDK `11.0.100-rc.3.26522.148`，`dotnet build VelaShell.slnx -c Debug --nologo -warnaserror` 通过，0 警告、0 错误。`dotnet test VelaShell.slnx -c Debug --no-build --nologo` 按 `StagedRelaySourceTests`、`FtpFileServiceIntegrationTests`、`ConnectionProfileTypePickerTests`、`ConnectionProfileViewUiTests`、`LocalizedKeyUsageTests`、`UnusedLocalizedKeyTests`、`HeadlessDispatchUsageTests` 过滤：205 通过、0 失败、0 跳过（Core 45、Infrastructure 94、宿主 66）。未运行完整测试集或 Linux / macOS 构建与测试。
 
 **文档**：此次只修复测试编译，现有行为、接口、配置和构建流程不变，无需修改用户手册或 velashell-docs。
+
+## 297. 2026-10-31 PR #698：修复 sudo 状态测试取消探针的竞态
+
+**根因**：§296 后三平台编译均通过，运行 `41195289699` 的 Linux 作业唯一失败为 `RunningIsReportedBeforeAnyWaitAfterTheStartMarker`，耗时恰为测试宿主的 25 秒死线。密码等待与探针分别在同一令牌上注册取消回调；`Task.Delay` 被取消后的续体可能先执行 `await using` 的清理，注销尚未执行的探针。这样即使执行器已发出 `Running`，探针仍未记录状态、也未取消执行死线，最终超时误报。用受控的后注册回调唤醒等待续体，已确定性复现取消探针被跳过的机制。
+
+**修正**：密码请求改为等待探针自己的 `TaskCompletionSource`；探针先记录状态、触发执行取消，再完成等待，确保注册不会被提前释放。保留原来的 `Running` 先于撤销等待的断言，不改生产状态机、超时或 CI 配置。
+
+**验证**：Debug / `-warnaserror` 构建及 sudo 状态测试 7 条通过；Windows 按 CI 调度配置运行 SSH 非 Interop 测试，1450 条通过、0 失败、0 跳过；修正后目标用例在临时诊断程序中连续执行 500 次通过。临时把生产代码的 `Running` 通知移到密码取消之后，修正后的用例立即失败（约 0.3 秒），还原顺序后通过，确认测试仍能拦住真实顺序回归。
+
+**文档**：只修正测试同步，不改变用户行为、接口、配置或构建流程，无需修改用户手册或 velashell-docs。
