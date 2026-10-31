@@ -3276,3 +3276,13 @@ AI 插件上一轮整体放大的字号恢复一档:聊天正文回到 13 号,�
 - 主机留空的提示跟着变体的主机标签说：当前变体给了 `WorkspaceVariant.HostLabel` 时，`HostError` 取新键 `Profile_ErrHostRequiredFormat`（SQLite：「请填写数据库文件」，五份 resx 齐）；没有变体、或变体没给 `HostLabel` 时仍是 `Profile_ErrHostRequired`。描述符级的标签（S3 的「服务端点」）不在此列。换类型时补发 `HostError` 通知。
 - 没有端点的表单收起「跳板主机」那一行：`ShowJumpHostField = ShowPortField`，变体或描述符声明 `NoEndpoint` 时为 false，串口同理；SSH / SFTP / FTP、Redis、S3、Telnet 照旧显示。只收显示，已存的跳板值不清，切回有端点的类型时原样回来；连接时建不建隧道仍按 `WorkspaceVariants.EffectiveFeatures` 判定，未改。
 - 用例：`ConnectionProfileTypePickerTests` 三条（提示跟标签走 / 跳板行随端点收起且值保留 / 无变体工作台不受影响），`ConnectionProfileViewUiTests` 一条 headless（断言落在绑定跳板列表的下拉及其所在行上）。变异「提示不跟标签走」「跳板行不看端点」「删掉 AXAML 那一行的 IsVisible 绑定」均使对应用例失败。`manual.md` / `manual.en.md` §4.1 同步一句。
+
+## 296. 2026-10-31 PR #698：修复基线测试代码导致的 CI 构建失败
+
+**根因**：CI 运行 `41167937874` 的构建报 6 个错误，本地以同一条 Debug / `-warnaserror` 命令复现。错误由基线提交 `58d44e1c` 的断言改写引入：5 处 `Assert.AreEqual` 的实际值是异常属性 `ExpectedBytes`，MSTEST0017 按属性名前缀误判参数颠倒；另有一处 `Assert.AreSequenceEqual` 的集合表达式被目标类型化为不可构造的非泛型 `IEnumerable`，报 CS9174。均早于 #698 的连接表单改动。
+
+**修正**：期望字节数使用明确命名的 `expectedBytes` 参数或局部变量，保持期望值在前、异常属性在后的断言语义；带前缀的预期内容先保存为 `byte[]` 再比较。不关闭分析器，不改包版本、CI 或产品行为。
+
+**验证**：Windows / .NET SDK `11.0.100-rc.3.26522.148`，`dotnet build VelaShell.slnx -c Debug --nologo -warnaserror` 通过，0 警告、0 错误。`dotnet test VelaShell.slnx -c Debug --no-build --nologo` 按 `StagedRelaySourceTests`、`FtpFileServiceIntegrationTests`、`ConnectionProfileTypePickerTests`、`ConnectionProfileViewUiTests`、`LocalizedKeyUsageTests`、`UnusedLocalizedKeyTests`、`HeadlessDispatchUsageTests` 过滤：205 通过、0 失败、0 跳过（Core 45、Infrastructure 94、宿主 66）。未运行完整测试集或 Linux / macOS 构建与测试。
+
+**文档**：此次只修复测试编译，现有行为、接口、配置和构建流程不变，无需修改用户手册或 velashell-docs。
